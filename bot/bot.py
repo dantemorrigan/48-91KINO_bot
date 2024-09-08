@@ -30,17 +30,17 @@ def parse_search_results(content):
     for item in soup.find_all('div', class_='th-item'):
         title = item.find('div', class_='th-title').get_text(strip=True)
         link = item.find('a', class_='th-in with-mask')['href']
-        results.append((title, link))
+        results.append((f"{title} (Источник 1)", link))
     return results
 
 # Функция для парсинга результатов поиска на втором сайте (BeFilm)
 def parse_befilm_search_results(content):
     soup = BeautifulSoup(content, 'html.parser')
     results = []
-    for item in soup.find_all('div', class_='th-item'):  # Используем аналогичную структуру
+    for item in soup.find_all('div', class_='th-item'):  # Аналогичная структура
         title = item.find('div', class_='th-title').get_text(strip=True)
         link = item.find('a', class_='th-in with-mask')['href']
-        results.append((title, link))
+        results.append((f"{title} (Источник 2)", link))
     return results
 
 # Функция для извлечения ссылки на плеер
