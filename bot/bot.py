@@ -19,6 +19,7 @@ SEARCH_URL = 'https://lordserial.run/index.php?do=search'
 def get_page(url, params=None):
     response = requests.get(url, params=params)
     response.raise_for_status()  # Проверяем на ошибки
+    logger.info(f'Получен HTML-код страницы: {response.text[:1000]}')  # Вывод первых 1000 символов для отладки
     return response.text
 
 
@@ -29,10 +30,15 @@ def parse_search_results(content):
 
     # Парсинг карточек фильмов
     for item in soup.find_all('div', class_='th-item'):
-        title = item.find('div', class_='th-title').get_text(strip=True)
-        link = item.find('a', class_='th-in with-mask')['href']
-        results.append((title, link))
+        title_div = item.find('div', class_='th-title')
+        link_a = item.find('a', class_='th-in with-mask')
 
+        if title_div and link_a:
+            title = title_div.get_text(strip=True)
+            link = link_a['href']
+            results.append((title, link))
+
+    logger.info(f'Результаты поиска: {results}')  # Вывод результатов поиска для отладки
     return results
 
 
