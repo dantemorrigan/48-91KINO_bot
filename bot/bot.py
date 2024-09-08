@@ -14,20 +14,17 @@ logger = logging.getLogger(__name__)
 # URL-адрес поиска
 SEARCH_URL = 'https://w140.zona.plus/search-form'
 
-
 # Функция для получения HTML-кода страницы
 def get_page(url):
     response = requests.get(url)
     response.raise_for_status()  # Проверяем на ошибки
     return response.text
 
-
 # Функция для получения результатов поиска
 def get_search_results(search_term):
     search_url = f'{SEARCH_URL}?query={search_term}'
     search_content = get_page(search_url)
     return parse_search_results(search_content)
-
 
 # Функция для парсинга результатов поиска
 def parse_search_results(content):
@@ -41,7 +38,6 @@ def parse_search_results(content):
 
     return results
 
-
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
@@ -49,24 +45,23 @@ def extract_player_link(movie_page_content):
     # Отладочная информация
     logger.debug('HTML контент страницы фильма:\n' + soup.prettify())
 
-    # Пытаемся найти ссылку в <iframe>
-    iframe = soup.find('iframe')
-    if iframe:
-        src = iframe.get('src')
+    # Пытаемся найти ссылку в <link itemprop="embedUrl">
+    embed_url = soup.find('link', itemprop='embedUrl')
+    if embed_url:
+        src = embed_url.get('href')
         if src:
-            logger.debug(f'Найдена ссылка в <iframe>: {src}')
+            logger.debug(f'Найдена ссылка в <link itemprop="embedUrl">: {src}')
             return src
 
-    # Пытаемся найти ссылку в <video>
-    video_tag = soup.find('video', id='player_html5_api')
-    if video_tag:
-        src = video_tag.get('src')
+    # Также проверяем ссылку на страницу фильма
+    movie_url = soup.find('link', itemprop='url')
+    if movie_url:
+        src = movie_url.get('href')
         if src:
-            logger.debug(f'Найдена ссылка в <video>: {src}')
+            logger.debug(f'Найдена ссылка на страницу фильма в <link itemprop="url">: {src}')
             return src
 
     return None
-
 
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results):
@@ -76,10 +71,8 @@ def build_keyboard(results):
     keyboard.append([InlineKeyboardButton("Назад", callback_data='back')])
     return InlineKeyboardMarkup(keyboard)
 
-
 # Глобальная переменная для хранения результатов поиска
 search_results_cache = {}
-
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -99,7 +92,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     logger.info('Отправлено приветственное сообщение с кнопкой "Поиск"')
-
 
 # Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -134,7 +126,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Некорректный выбор фильма.")
             logger.error(f'Некорректный индекс фильма: {index}, количество фильмов: {len(results)}')
 
-
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
@@ -151,7 +142,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = build_keyboard(search_results)
         await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
 
-
 # Основная функция
 def main():
     application = Application.builder().token(TOKEN).build()
@@ -162,7 +152,6 @@ def main():
 
     logger.info('Бот запущен')
     application.run_polling()
-
 
 if __name__ == '__main__':
     main()
