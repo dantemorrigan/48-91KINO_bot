@@ -11,57 +11,69 @@ TOKEN = '7287010414:AAGpZ0dlH6_0xns8Bq7rWxMjK_E9zG9w1nY'
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# URL-адрес поиска
-SEARCH_URL = 'https://w140.zona.plus/search-form'
+# URL-адрес поиска на первом сайте (LordSerial)
+SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
+
+# URL-адрес поиска на втором сайте (BeFilm)
+SEARCH_URL_BEFILM = 'https://t1.befilm1.life/index.php?do=search'
 
 # Функция для получения HTML-кода страницы
-def get_page(url):
-    response = requests.get(url)
+def get_page(url, params=None):
+    response = requests.get(url, params=params)
     response.raise_for_status()  # Проверяем на ошибки
     return response.text
 
-# Функция для получения результатов поиска
-def get_search_results(search_term):
-    search_url = f'{SEARCH_URL}?query={search_term}'
-    search_content = get_page(search_url)
-    return parse_search_results(search_content)
-
-# Функция для парсинга результатов поиска
+# Функция для парсинга результатов поиска с первого сайта (LordSerial)
 def parse_search_results(content):
     soup = BeautifulSoup(content, 'html.parser')
     results = []
-
-    for item in soup.find_all('li', class_='results-item-wrap'):
-        title = item.find('div', class_='results-item-title').get_text(strip=True)
-        link = item.find('a', class_='results-item')['href']
+    for item in soup.find_all('div', class_='th-item'):
+        title = item.find('div', class_='th-title').get_text(strip=True)
+        link = item.find('a', class_='th-in with-mask')['href']
         results.append((title, link))
+    return results
 
+# Функция для парсинга результатов поиска на втором сайте (BeFilm)
+def parse_befilm_search_results(content):
+    soup = BeautifulSoup(content, 'html.parser')
+    results = []
+    for item in soup.find_all('div', class_='th-item'):  # Используем аналогичную структуру
+        title = item.find('div', class_='th-title').get_text(strip=True)
+        link = item.find('a', class_='th-in with-mask')['href']
+        results.append((title, link))
     return results
 
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
-
-    # Отладочная информация
-    logger.debug('HTML контент страницы фильма:\n' + soup.prettify())
-
-    # Пытаемся найти ссылку в <link itemprop="embedUrl">
-    embed_url = soup.find('link', itemprop='embedUrl')
-    if embed_url:
-        src = embed_url.get('href')
-        if src:
-            logger.debug(f'Найдена ссылка в <link itemprop="embedUrl">: {src}')
-            return src
-
-    # Также проверяем ссылку на страницу фильма
-    movie_url = soup.find('link', itemprop='url')
-    if movie_url:
-        src = movie_url.get('href')
-        if src:
-            logger.debug(f'Найдена ссылка на страницу фильма в <link itemprop="url">: {src}')
-            return src
-
+    iframe = soup.find('iframe')
+    if iframe:
+        return iframe['src']
     return None
+
+# Функция для объединения результатов поиска с двух сайтов
+def get_combined_search_results(search_term):
+    # Поиск на первом сайте (LordSerial)
+    params_lordserial = {
+        'do': 'search',
+        'subaction': 'search',
+        'story': search_term
+    }
+    search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
+    results_lordserial = parse_search_results(search_content_lordserial)
+
+    # Поиск на втором сайте (BeFilm)
+    params_befilm = {
+        'do': 'search',
+        'subaction': 'search',
+        'story': search_term
+    }
+    search_content_befilm = get_page(SEARCH_URL_BEFILM, params=params_befilm)
+    results_befilm = parse_befilm_search_results(search_content_befilm)
+
+    # Объединяем результаты поиска
+    combined_results = results_lordserial + results_befilm
+    return combined_results
 
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results):
@@ -106,8 +118,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info('Отправлено сообщение для ввода названия')
     elif data == 'back':
         await query.edit_message_text('Добро пожаловать! Нажмите кнопку ниже, чтобы начать поиск фильмов или сериалов.',
-                                      reply_markup=InlineKeyboardMarkup(
-                                          [[InlineKeyboardButton("Поиск", callback_data='search')]]))
+                                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("Поиск", callback_data='search')]]))
     elif data.startswith('movie_'):
         # Обработка нажатия кнопки фильма
         index = int(data.split('_')[1])
@@ -115,8 +126,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results = search_results_cache.get('results', [])
         if 0 <= index < len(results):
             title, movie_url = results[index]
-            movie_page_url = f'https://w140.zona.plus{movie_url}'
-            movie_page_content = get_page(movie_page_url)
+            movie_page_content = get_movie_page(movie_url)
             player_url = extract_player_link(movie_page_content)
             if player_url:
                 await query.edit_message_text(f"Смотреть фильм здесь: {player_url}")
@@ -126,13 +136,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Некорректный выбор фильма.")
             logger.error(f'Некорректный индекс фильма: {index}, количество фильмов: {len(results)}')
 
+# Функция для получения страницы фильма
+def get_movie_page(url):
+    return get_page(url)
+
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
     logger.info(f'Пользователь запросил поиск: {search_term}')
 
-    search_results = get_search_results(search_term)
-    search_results_cache['results'] = search_results
+    # Получаем результаты поиска с двух сайтов
+    search_results = get_combined_search_results(search_term)
+    search_results_cache['results'] = search_results  # Сохраняем результаты поиска в глобальную переменную
 
     logger.info(f'Найдено {len(search_results)} результатов поиска')
 
