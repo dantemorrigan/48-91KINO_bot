@@ -13,14 +13,19 @@ logger = logging.getLogger(__name__)
 
 # URL-адрес поиска
 SEARCH_URL = 'https://lordserial.run/index.php?do=search'
-# URL-адрес плеера
-PLAYER_URL = 'https://player.cdnvideohub.com/svplayer?partner=22&kid=448'
+
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
     response = requests.get(url, params=params)
     response.raise_for_status()  # Проверяем на ошибки
     return response.text
+
+
+# Функция для получения HTML-кода страницы фильма
+def get_movie_page(url):
+    return get_page(url)
+
 
 # Функция для парсинга результатов поиска
 def parse_search_results(content):
@@ -31,27 +36,27 @@ def parse_search_results(content):
     for item in soup.find_all('div', class_='th-item'):
         title = item.find('div', class_='th-title').get_text(strip=True)
         link = item.find('a', class_='th-in with-mask')['href']
-        # Получаем страницу фильма
-        movie_page = get_page(link)
-        # Находим ссылку на плеер
-        player_url = get_player_url(movie_page)
-        results.append((title, player_url))
+        results.append((title, link))
 
     return results
 
-# Функция для получения ссылки на плеер
-def get_player_url(movie_page_content):
+
+# Функция для извлечения ссылки на плеер
+def extract_player_link(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
-    # Здесь можно добавить логику для поиска ссылки на плеер, если её нет
-    # Учитывая, что ссылка на плеер у вас есть, просто вернем её
-    return PLAYER_URL
+    iframe = soup.find('iframe')
+    if iframe:
+        return iframe['src']
+    return None
+
 
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results):
     keyboard = []
     for title, url in results:
-        keyboard.append([InlineKeyboardButton(title, url=url)])
+        keyboard.append([InlineKeyboardButton(title, callback_data=url)])
     return InlineKeyboardMarkup(keyboard)
+
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -62,6 +67,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     reply_markup=reply_markup)
     logger.info('Отправлено приветственное сообщение с кнопкой "Поиск"')
 
+
 # Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -70,6 +76,19 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info('Пользователь нажал кнопку "Поиск"')
         await query.edit_message_text(text="Введите название фильма или сериала для поиска:")
         logger.info('Отправлено сообщение для ввода названия')
+    else:
+        # Получаем ссылку на страницу фильма
+        movie_url = query.data
+        movie_page_content = get_movie_page(movie_url)
+
+        # Извлекаем ссылку на плеер
+        player_url = extract_player_link(movie_page_content)
+
+        if player_url:
+            await query.edit_message_text(f"Смотреть фильм здесь: {player_url}")
+        else:
+            await query.edit_message_text("Не удалось найти плеер для этого фильма.")
+
 
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -92,6 +111,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = build_keyboard(search_results)
         await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
 
+
 # Основная функция
 def main():
     application = Application.builder().token(TOKEN).build()
@@ -102,6 +122,7 @@ def main():
 
     logger.info('Бот запущен')
     application.run_polling()
+
 
 if __name__ == '__main__':
     main()
