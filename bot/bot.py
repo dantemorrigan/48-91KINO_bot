@@ -1,16 +1,14 @@
 import json
-
-# Загрузка токена из файла конфигурации
-with open('config.json', 'r') as file:
-    config = json.load(file)
-    TOKEN = config['TOKEN']
-
-# Импортируем необходимые библиотеки
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
 from bs4 import BeautifulSoup
+
+# Загрузка токена из файла конфигурации
+with open('config.json', 'r') as file:
+    config = json.load(file)
+    TOKEN = config['TOKEN']
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -50,24 +48,10 @@ def extract_movie_info(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
     title = soup.find('h1').get_text(strip=True)
     description = soup.find('div', class_='fdesc').get_text(strip=True)
-    imdb_rating = soup.find('div', class_='frate frate-imdb').get_text(strip=True) if soup.find('div',
-                                                                                                class_='frate frate-imdb') else "Нет"
-    kp_rating = soup.find('div', class_='frate frate-kp').get_text(strip=True) if soup.find('div',
-                                                                                            class_='frate frate-kp') else "Нет"
-    year = soup.find('span', itemprop='dateCreated').get_text(strip=True) if soup.find('span',
-                                                                                       itemprop='dateCreated') else "Не указано"
-    country = soup.find('a', href=True, text=True).get_text(strip=True) if soup.find('a', href=True,
-                                                                                     text=True) else "Не указано"
-    premiere = soup.find_all('li')[3].get_text(strip=True).replace('Премьера:', '').strip() if len(
-        soup.find_all('li')) > 3 else "Не указана"
 
     return {
         'title': title,
         'description': description,
-        'imdb_rating': imdb_rating,
-        'kp_rating': kp_rating,
-        'year': year,
-        'country': country,
     }
 
 # Функция для извлечения ссылки на плеер
@@ -168,10 +152,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response_message = (
                 f"*Название:* {movie_info['title']}\n"
                 f"*Описание:* {movie_info['description']}\n"
-                f"*Рейтинг IMDb:* {movie_info['imdb_rating']}\n"
-                f"*Рейтинг Кинопоиск:* {movie_info['kp_rating']}\n"
-                f"*Год выхода:* {movie_info['year']}\n"
-                f"*Страна:* {movie_info['country']}\n"
                 "\n"
             )
 
