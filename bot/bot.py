@@ -18,11 +18,13 @@ logger = logging.getLogger(__name__)
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
 SEARCH_URL_BEFILM = 'https://t1.befilm1.life/index.php?do=search'
 
+
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
     response = requests.get(url, params=params)
     response.raise_for_status()  # Проверяем на ошибки
     return response.text
+
 
 # Функции для парсинга результатов поиска
 def parse_search_results(content):
@@ -34,6 +36,7 @@ def parse_search_results(content):
         results.append((f"{title} (Источник 1)", link))
     return results
 
+
 def parse_befilm_search_results(content):
     soup = BeautifulSoup(content, 'html.parser')
     results = []
@@ -42,6 +45,7 @@ def parse_befilm_search_results(content):
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 2)", link))
     return results
+
 
 # Функция для извлечения информации о фильме
 def extract_movie_info(movie_page_content):
@@ -54,6 +58,7 @@ def extract_movie_info(movie_page_content):
         'description': description,
     }
 
+
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
@@ -61,6 +66,7 @@ def extract_player_link(movie_page_content):
     if iframe:
         return iframe['src']
     return None
+
 
 # Функция для объединения результатов поиска
 def get_combined_search_results(search_term):
@@ -75,18 +81,29 @@ def get_combined_search_results(search_term):
     combined_results = results_lordserial + results_befilm
     return combined_results
 
+
 # Функция для создания клавиатуры с кнопками
-def build_keyboard(results, show_back=True):
+def build_keyboard(results, current_page, total_pages):
     keyboard = []
-    for idx, (title, _) in enumerate(results):
-        keyboard.append([InlineKeyboardButton(title, callback_data=f"movie_{idx}")])
-    if show_back:
-        keyboard.append([InlineKeyboardButton("Назад", callback_data='back')])
+    start_index = (current_page - 1) * 5
+    end_index = start_index + 5
+    paginated_results = results[start_index:end_index]
+
+    for idx, (title, _) in enumerate(paginated_results):
+        keyboard.append([InlineKeyboardButton(title, callback_data=f"movie_{start_index + idx}")])
+
+    if current_page > 1:
+        keyboard.append([InlineKeyboardButton("Предыдущая", callback_data=f'prev_{current_page - 1}')])
+    if current_page < total_pages:
+        keyboard.append([InlineKeyboardButton("Следующая", callback_data=f'next_{current_page + 1}')])
+
     return InlineKeyboardMarkup(keyboard)
 
-# Глобальная переменная для хранения результатов поиска
+
+# Глобальные переменные для хранения результатов поиска
 search_results_cache = {}
 previous_state_cache = {}
+
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -94,18 +111,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[InlineKeyboardButton("Поиск", callback_data='search')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_message = (
-        "Добро пожаловать в официального Telegram-бота канала 48/91 (https://t.me/tommorow4891) для поиска фильмов и сериалов! 🎬\n\n"
-        "Что он умеет?\n\n"
-        "1. Искать фильмы/сериалы\n"
-        "- Нажмите 'Поиск' в главном меню.\n"
-        "- Введите название фильма или сериала, который вы ищете.\n\n"
-        "2. Выбор фильма или сериала:\n"
-        "- После получения результатов поиска выберите фильм, нажав на название.\n"
-        "- Бот предоставит вам краткую информацию о фильме и ссылку на плеер.\n\n"
-        "Все материалы взяты из открытых источников. Авторы бота не имели никаких злых намерений или целей."
+        "Добро пожаловать в бота для поиска фильмов и сериалов от канала 48/91 (https://t.me/tommorow4891)! 🎬\n\n"
+        "Нажмите 'Поиск для начала."
     )
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
-    logger.info('Отправлено приветственное сообщение с кнопкой "Поиск"')
+
 
 # Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -116,32 +126,11 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Обработка кнопки "Поиск"
     if data == 'search':
-        logger.info('Пользователь нажал кнопку "Поиск"')
-        previous_state_cache[query.from_user.id] = 'start'
         await query.edit_message_text(text="Введите название фильма или сериала для поиска:")
-        logger.info('Отправлено сообщение для ввода названия')
-
-    # Обработка кнопки "Назад"
-    elif data == 'back':
-        previous_state = previous_state_cache.get(query.from_user.id, 'start')
-        if previous_state == 'search':
-            await query.edit_message_text('Добро пожаловать! Нажмите кнопку ниже, чтобы начать поиск фильмов или сериалов.',
-                                          reply_markup=InlineKeyboardMarkup(
-                                              [[InlineKeyboardButton("Поиск", callback_data='search')]]))
-        elif previous_state == 'results':
-            search_results = search_results_cache.get('results', [])
-            reply_markup = build_keyboard(search_results, show_back=False)
-            await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
-        elif previous_state == 'movie':
-            search_results = search_results_cache.get('results', [])
-            reply_markup = build_keyboard(search_results)
-            await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
-        logger.info('Возврат к предыдущему состоянию')
 
     # Обработка выбора фильма
     elif data.startswith('movie_'):
         index = int(data.split('_')[1])
-        logger.info(f'Выбран фильм с индексом: {index}')
         results = search_results_cache.get('results', [])
         if 0 <= index < len(results):
             title, movie_url = results[index]
@@ -152,7 +141,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response_message = (
                 f"*Название:* {movie_info['title']}\n"
                 f"*Описание:* {movie_info['description']}\n"
-                "\n"
             )
 
             if player_url:
@@ -160,11 +148,32 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 response_message += "Не удалось найти плеер для этого фильма."
 
-            previous_state_cache[query.from_user.id] = 'movie'
             await query.edit_message_text(response_message, parse_mode='Markdown')
         else:
             await query.edit_message_text("Некорректный выбор фильма.")
-            logger.error(f'Некорректный индекс фильма: {index}, количество фильмов: {len(results)}')
+
+    # Обработка перехода на следующую страницу
+    elif data.startswith('next_'):
+        page = int(data.split('_')[1])
+        search_term = search_results_cache.get('search_term')
+        total_results = search_results_cache['total_results']
+        total_pages = (total_results // 5) + (1 if total_results % 5 > 0 else 0)
+
+        results = search_results_cache.get('results', [])
+        reply_markup = build_keyboard(results, page, total_pages)
+        await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
+
+    # Обработка перехода на предыдущую страницу
+    elif data.startswith('prev_'):
+        page = int(data.split('_')[1])
+        search_term = search_results_cache.get('search_term')
+        total_results = search_results_cache['total_results']
+        total_pages = (total_results // 5) + (1 if total_results % 5 > 0 else 0)
+
+        results = search_results_cache.get('results', [])
+        reply_markup = build_keyboard(results, page, total_pages)
+        await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
+
 
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -173,16 +182,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Получаем результаты поиска с двух сайтов
     search_results = get_combined_search_results(search_term)
-    search_results_cache['results'] = search_results  # Сохраняем результаты поиска в глобальную переменную
+    search_results_cache['results'] = search_results  # Сохраняем результаты поиска в кэш
+    search_results_cache['search_term'] = search_term  # Сохраняем запрос
+    search_results_cache['total_results'] = len(search_results)  # Сохраняем общее количество результатов
 
     logger.info(f'Найдено {len(search_results)} результатов поиска')
 
     if not search_results:
         await update.message.reply_text('Ничего не найдено. Попробуйте другой запрос.')
     else:
-        reply_markup = build_keyboard(search_results)
-        previous_state_cache[update.message.from_user.id] = 'results'
+        total_pages = (len(search_results) // 5) + (1 if len(search_results) % 5 > 0 else 0)
+        reply_markup = build_keyboard(search_results, 1, total_pages)  # Начальная страница
         await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
+
 
 # Основная функция
 def main():
@@ -194,6 +206,7 @@ def main():
 
     logger.info('Бот запущен')
     application.run_polling()
+
 
 if __name__ == '__main__':
     main()
