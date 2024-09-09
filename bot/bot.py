@@ -67,7 +67,7 @@ def extract_movie_info(movie_page_content):
         'kp_rating': kp_rating,
         'year': year,
         'country': country,
-        'premiere': premiere
+
     }
 
 
@@ -95,16 +95,18 @@ def get_combined_search_results(search_term):
 
 
 # Функция для создания клавиатуры с кнопками
-def build_keyboard(results):
+def build_keyboard(results, show_back=True):
     keyboard = []
     for idx, (title, _) in enumerate(results):
         keyboard.append([InlineKeyboardButton(title, callback_data=f"movie_{idx}")])
-    keyboard.append([InlineKeyboardButton("Назад", callback_data='back')])
+    if show_back:
+        keyboard.append([InlineKeyboardButton("Назад", callback_data='back')])
     return InlineKeyboardMarkup(keyboard)
 
 
 # Глобальная переменная для хранения результатов поиска
 search_results_cache = {}
+previous_state_cache = {}
 
 
 # Функция для обработки команды /start
@@ -134,16 +136,32 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     data = query.data
     logger.info(f'Нажата кнопка с данными: {data}')
 
+    # Обработка кнопки "Поиск"
     if data == 'search':
         logger.info('Пользователь нажал кнопку "Поиск"')
+        previous_state_cache[query.from_user.id] = 'start'
         await query.edit_message_text(text="Введите название фильма или сериала для поиска:")
         logger.info('Отправлено сообщение для ввода названия')
+
+    # Обработка кнопки "Назад"
     elif data == 'back':
-        await query.edit_message_text('Добро пожаловать! Нажмите кнопку ниже, чтобы начать поиск фильмов или сериалов.',
-                                      reply_markup=InlineKeyboardMarkup(
-                                          [[InlineKeyboardButton("Поиск", callback_data='search')]]))
+        previous_state = previous_state_cache.get(query.from_user.id, 'start')
+        if previous_state == 'search':
+            await query.edit_message_text('Добро пожаловать! Нажмите кнопку ниже, чтобы начать поиск фильмов или сериалов.',
+                                          reply_markup=InlineKeyboardMarkup(
+                                              [[InlineKeyboardButton("Поиск", callback_data='search')]]))
+        elif previous_state == 'results':
+            search_results = search_results_cache.get('results', [])
+            reply_markup = build_keyboard(search_results, show_back=False)
+            await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
+        elif previous_state == 'movie':
+            search_results = search_results_cache.get('results', [])
+            reply_markup = build_keyboard(search_results)
+            await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
+        logger.info('Возврат к предыдущему состоянию')
+
+    # Обработка выбора фильма
     elif data.startswith('movie_'):
-        # Обработка нажатия кнопки фильма
         index = int(data.split('_')[1])
         logger.info(f'Выбран фильм с индексом: {index}')
         results = search_results_cache.get('results', [])
@@ -160,7 +178,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"*Рейтинг Кинопоиск:* {movie_info['kp_rating']}\n"
                 f"*Год выхода:* {movie_info['year']}\n"
                 f"*Страна:* {movie_info['country']}\n"
-                f"*Премьера:* {movie_info['premiere']}\n\n"
             )
 
             if player_url:
@@ -168,6 +185,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 response_message += "Не удалось найти плеер для этого фильма."
 
+            previous_state_cache[query.from_user.id] = 'movie'
             await query.edit_message_text(response_message, parse_mode='Markdown')
         else:
             await query.edit_message_text("Некорректный выбор фильма.")
@@ -189,6 +207,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text('Ничего не найдено. Попробуйте другой запрос.')
     else:
         reply_markup = build_keyboard(search_results)
+        previous_state_cache[update.message.from_user.id] = 'results'
         await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
 
 
