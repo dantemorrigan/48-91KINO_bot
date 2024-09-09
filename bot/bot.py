@@ -1,12 +1,16 @@
-#Импортируем необходимые библиотеки
+import json
+
+# Загрузка токена из файла конфигурации
+with open('config.json', 'r') as file:
+    config = json.load(file)
+    TOKEN = config['TOKEN']
+
+# Импортируем необходимые библиотеки
 import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
 from bs4 import BeautifulSoup
-
-# Токен бота
-TOKEN = '7287010414:AAGpZ0dlH6_0xns8Bq7rWxMjK_E9zG9w1nY'
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -16,13 +20,11 @@ logger = logging.getLogger(__name__)
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
 SEARCH_URL_BEFILM = 'https://t1.befilm1.life/index.php?do=search'
 
-
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
     response = requests.get(url, params=params)
     response.raise_for_status()  # Проверяем на ошибки
     return response.text
-
 
 # Функции для парсинга результатов поиска
 def parse_search_results(content):
@@ -34,7 +36,6 @@ def parse_search_results(content):
         results.append((f"{title} (Источник 1)", link))
     return results
 
-
 def parse_befilm_search_results(content):
     soup = BeautifulSoup(content, 'html.parser')
     results = []
@@ -43,7 +44,6 @@ def parse_befilm_search_results(content):
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 2)", link))
     return results
-
 
 # Функция для извлечения информации о фильме
 def extract_movie_info(movie_page_content):
@@ -68,9 +68,7 @@ def extract_movie_info(movie_page_content):
         'kp_rating': kp_rating,
         'year': year,
         'country': country,
-
     }
-
 
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
@@ -79,7 +77,6 @@ def extract_player_link(movie_page_content):
     if iframe:
         return iframe['src']
     return None
-
 
 # Функция для объединения результатов поиска
 def get_combined_search_results(search_term):
@@ -94,7 +91,6 @@ def get_combined_search_results(search_term):
     combined_results = results_lordserial + results_befilm
     return combined_results
 
-
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results, show_back=True):
     keyboard = []
@@ -104,11 +100,9 @@ def build_keyboard(results, show_back=True):
         keyboard.append([InlineKeyboardButton("Назад", callback_data='back')])
     return InlineKeyboardMarkup(keyboard)
 
-
 # Глобальная переменная для хранения результатов поиска
 search_results_cache = {}
 previous_state_cache = {}
-
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -128,7 +122,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     logger.info('Отправлено приветственное сообщение с кнопкой "Поиск"')
-
 
 # Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -192,7 +185,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("Некорректный выбор фильма.")
             logger.error(f'Некорректный индекс фильма: {index}, количество фильмов: {len(results)}')
 
-
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
@@ -211,7 +203,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         previous_state_cache[update.message.from_user.id] = 'results'
         await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
 
-
 # Основная функция
 def main():
     application = Application.builder().token(TOKEN).build()
@@ -222,7 +213,6 @@ def main():
 
     logger.info('Бот запущен')
     application.run_polling()
-
 
 if __name__ == '__main__':
     main()
