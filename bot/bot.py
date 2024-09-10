@@ -85,7 +85,6 @@ def build_keyboard(results, current_page, total_pages):
 
     return InlineKeyboardMarkup(keyboard)
 
-
 # Функция для создания клавиатуры с кнопками на странице избранного
 def build_favorites_keyboard():
     keyboard = [
@@ -104,7 +103,6 @@ def build_movie_keyboard(movie_url):
         [InlineKeyboardButton("🏠 Главная", callback_data='home')]
     ]
     return InlineKeyboardMarkup(keyboard)
-
 
 # Обновленная функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -204,33 +202,36 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         unique_id = data.split('_')[1]
         # Найти оригинальный URL по уникальному идентификатору
         original_url = find_original_url_by_id(unique_id)
-        movie_page_content = get_page(original_url)
-        movie_info = extract_movie_info(movie_page_content)
-        player_url = extract_player_link(movie_page_content)
-        cover_image = extract_cover_image(movie_page_content)
+        if original_url:
+            movie_page_content = get_page(original_url)
+            movie_info = extract_movie_info(movie_page_content)
+            player_url = extract_player_link(movie_page_content)
+            cover_image = extract_cover_image(movie_page_content)
 
-        favorites = favorite_movies_cache.get('favorites', [])
-        links = favorite_movies_cache.get('links', {})
-        covers = favorite_movies_cache.get('covers', {})
+            favorites = favorite_movies_cache.get('favorites', [])
+            links = favorite_movies_cache.get('links', {})
+            covers = favorite_movies_cache.get('covers', {})
 
-        if movie_info['title'] not in favorites:
-            favorites.append(movie_info['title'])
-            links[movie_info['title']] = player_url
-            covers[movie_info['title']] = cover_image
-            favorite_movies_cache['favorites'] = favorites
-            favorite_movies_cache['links'] = links
-            favorite_movies_cache['covers'] = covers
-            update_favorites_cache()
-            await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.",
-                                          reply_markup=build_favorites_keyboard())
+            if movie_info['title'] not in favorites:
+                favorites.append(movie_info['title'])
+                links[movie_info['title']] = player_url
+                covers[movie_info['title']] = cover_image
+                favorite_movies_cache['favorites'] = favorites
+                favorite_movies_cache['links'] = links
+                favorite_movies_cache['covers'] = covers
+                update_favorites_cache()
+                await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.",
+                                              reply_markup=build_favorites_keyboard())
+            else:
+                await query.edit_message_text(f"{movie_info['title']} уже в избранном.",
+                                              reply_markup=build_favorites_keyboard())
         else:
-            await query.edit_message_text(f"{movie_info['title']} уже в избранном.",
+            await query.edit_message_text("Не удалось найти фильм для добавления в избранное.",
                                           reply_markup=build_favorites_keyboard())
 
     # Обработка кнопки "Главная"
     elif data == 'home':
         await start(update, context)
-
 
 # Файл для хранения избранного
 FAVORITES_FILE = 'favorites.json'
@@ -257,7 +258,6 @@ favorite_movies_cache = load_favorites()
 def update_favorites_cache():
     save_favorites(favorite_movies_cache)
 
-
 # Функция для извлечения обложек
 def extract_cover_image(movie_page_content):
     """
@@ -271,6 +271,12 @@ def extract_cover_image(movie_page_content):
             return img_tag['src']
     return None
 
+# Функция для поиска оригинального URL по уникальному идентификатору
+def find_original_url_by_id(unique_id):
+    for title, url in search_results_cache.get('results', []):
+        if get_unique_id(url) == unique_id:
+            return url
+    return None
 
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
