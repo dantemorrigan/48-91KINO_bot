@@ -87,7 +87,11 @@ def build_keyboard(results, current_page, total_pages):
     if current_page < total_pages:
         keyboard.append([InlineKeyboardButton("Следующая ➡️", callback_data=f'next_{current_page + 1}')])
 
+    # Добавляем кнопку "Главная"
+    keyboard.append([InlineKeyboardButton("🏠 Главная", callback_data='home')])
+
     return InlineKeyboardMarkup(keyboard)
+
 
 # Глобальные переменные для хранения результатов поиска
 search_results_cache = {}
@@ -104,7 +108,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
-# Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -137,7 +140,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             else:
                 response_message += "Не удалось найти плеер для этого фильма."
 
-            await query.edit_message_text(response_message, parse_mode='HTML')
+            # Добавляем кнопку "Главная"
+            keyboard = [[InlineKeyboardButton("🏠 Главная", callback_data='home')]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text(response_message, parse_mode='HTML', reply_markup=reply_markup)
         else:
             await query.edit_message_text("Некорректный выбор фильма.")
 
@@ -161,6 +167,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = build_keyboard(results, page, total_pages)
         await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
 
+    # Обработка кнопки "Главная"
+    elif data == 'home':
+        keyboard = [[InlineKeyboardButton("🔍 Поиск", callback_data='search')]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        welcome_message = (
+            "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала 48/91 (https://t.me/tommorow4891)! 🎬\n\n"
+            "Нажмите 'Поиск' для начала."
+        )
+        await query.edit_message_text(welcome_message, reply_markup=reply_markup)
+
+
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
@@ -183,6 +200,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_pages = (len(search_results) // 5) + (1 if len(search_results) % 5 > 0 else 0)
         reply_markup = build_keyboard(search_results, 1, total_pages)  # Начальная страница
         await search_message.edit_text('Результаты поиска:', reply_markup=reply_markup)
+
 
 # Основная функция
 def main():
