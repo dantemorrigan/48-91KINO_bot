@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Смотреть фильм</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            background-color: #000;
+        }
+        .player-container {
+            width: 100%;
+            max-width: 1200px;
+            padding-bottom: 56.25%; /* Соотношение сторон 16:9 */
+            height: 0;
+            position: relative;
+        }
+        .player-container iframe {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="player-container">
+        <iframe src="" frameborder="0" allowfullscreen></iframe>
+    </div>
+
+    <script>
+        // Получаем URL плеера из параметров запроса
+        const urlParams = new URLSearchParams(window.location.search);
+        const playerUrl = urlParams.get('url');
+
+        if (playerUrl) {
+            document.querySelector('iframe').src = playerUrl;
+        } else {
+            document.body.innerHTML = '<p>Не удалось загрузить плеер.</p>';
+        }
+    </script>
+</body>
+</html>
