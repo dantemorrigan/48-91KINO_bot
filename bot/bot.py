@@ -195,22 +195,72 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Обработка добавления в избранное
     elif data.startswith('favorite_'):
         movie_url = data.split('_')[1]
-        movie_info = extract_movie_info(get_page(movie_url))
-        player_url = extract_player_link(get_page(movie_url))
+        movie_page_content = get_page(movie_url)
+        movie_info = extract_movie_info(movie_page_content)
+        player_url = extract_player_link(movie_page_content)
+        cover_image = extract_cover_image(movie_page_content)
+
         favorites = favorite_movies_cache.get('favorites', [])
         links = favorite_movies_cache.get('links', {})
+        covers = favorite_movies_cache.get('covers', {})
+
         if movie_info['title'] not in favorites:
             favorites.append(movie_info['title'])
             links[movie_info['title']] = player_url
+            covers[movie_info['title']] = cover_image
             favorite_movies_cache['favorites'] = favorites
             favorite_movies_cache['links'] = links
-            await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.", reply_markup=build_favorites_keyboard())
+            favorite_movies_cache['covers'] = covers
+            update_favorites_cache()
+            await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.",
+                                          reply_markup=build_favorites_keyboard())
         else:
-            await query.edit_message_text(f"{movie_info['title']} уже в избранном.", reply_markup=build_favorites_keyboard())
+            await query.edit_message_text(f"{movie_info['title']} уже в избранном.",
+                                          reply_markup=build_favorites_keyboard())
 
     # Обработка кнопки "Главная"
     elif data == 'home':
         await start(update, context)
+
+
+# Файл для хранения избранного
+FAVORITES_FILE = 'favorites.json'
+
+# Функция для загрузки избранного из файла
+def load_favorites():
+    try:
+        with open(FAVORITES_FILE, 'r') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        return {'favorites': [], 'links': {}, 'covers': {}}
+    except json.JSONDecodeError:
+        return {'favorites': [], 'links': {}, 'covers': {}}
+
+# Функция для сохранения избранного в файл
+def save_favorites(data):
+    with open(FAVORITES_FILE, 'w') as file:
+        json.dump(data, file)
+
+# Загрузка избранного при запуске бота
+favorite_movies_cache = load_favorites()
+
+# Функция для обновления избранного
+def update_favorites_cache():
+    save_favorites(favorite_movies_cache)
+
+
+# Функция для извлечения обложек
+def extract_cover_image(movie_page_content):
+    """
+    Извлекает URL обложки фильма из HTML-контента страницы фильма.
+    """
+    soup = BeautifulSoup(movie_page_content, 'html.parser')
+    cover_image_tag = soup.find('div', class_='th-img img-resp-vert')
+    if cover_image_tag:
+        img_tag = cover_image_tag.find('img')
+        if img_tag:
+            return img_tag['src']
+    return None
 
 
 # Функция для обработки сообщений
@@ -240,6 +290,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 def main():
     application = Application.builder().token(TOKEN).build()
 
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    global favorite_movies_cache
+    favorite_movies_cache = load_favorites()  # Загрузить данные избранного
+    application = Application.builder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
