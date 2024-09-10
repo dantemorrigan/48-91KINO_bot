@@ -117,7 +117,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
-# Функция для обработки нажатия кнопки
+# Обновленная функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -134,8 +134,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not favorites:
             await query.edit_message_text('Избранные фильмы пусты.')
         else:
-            favorites_message = '\n'.join([f"{title}" for title in favorites])
-            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}')
+            favorites_message = '\n'.join([f"{idx + 1}. <a href='{url}'>{title}</a>" for idx, (title, url) in enumerate(favorites)])
+            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML')
 
     # Обработка выбора фильма
     elif data.startswith('movie_'):
@@ -188,9 +188,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('favorite_'):
         movie_url = data.split('_')[1]
         movie_info = extract_movie_info(get_page(movie_url))
+        player_url = extract_player_link(get_page(movie_url))
         favorites = favorite_movies_cache.get('favorites', [])
-        if movie_info['title'] not in favorites:
-            favorites.append(movie_info['title'])
+        if (movie_info['title'], player_url) not in favorites:
+            favorites.append((movie_info['title'], player_url))
             favorite_movies_cache['favorites'] = favorites
             await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.")
         else:
@@ -199,6 +200,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Обработка кнопки "Главная"
     elif data == 'home':
         await start(update, context)
+
 
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
