@@ -124,6 +124,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
+
 # Обновленная функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -135,17 +136,14 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == 'search':
         await query.edit_message_text(text="Введите название фильма или сериала для поиска:")
 
-        # Обработка кнопки "Избранное"
+    # Обработка кнопки "Избранное"
     elif data == 'favorites':
         favorites = favorite_movies_cache.get('favorites', [])
         if not favorites:
             await query.edit_message_text('Избранные фильмы пусты.', reply_markup=build_favorites_keyboard())
         else:
-            favorites_message = '\n'.join(
-                [f"{idx + 1}. <a href='{favorite_movies_cache['links'][title]}'>{title}</a>" for idx, title in
-                 enumerate(favorites)])
-            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML',
-                                          reply_markup=build_favorites_keyboard())
+            favorites_message = '\n'.join([f"{idx + 1}. <a href='{favorite_movies_cache['links'][title]}'>{title}</a>" for idx, title in enumerate(favorites)])
+            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML', reply_markup=build_favorites_keyboard())
 
     # Обработка выбора фильма
     elif data.startswith('movie_'):
@@ -198,11 +196,12 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data.startswith('favorite_'):
         movie_url = data.split('_')[1]
         movie_info = extract_movie_info(get_page(movie_url))
+        player_url = extract_player_link(get_page(movie_url))
         favorites = favorite_movies_cache.get('favorites', [])
         links = favorite_movies_cache.get('links', {})
         if movie_info['title'] not in favorites:
             favorites.append(movie_info['title'])
-            links[movie_info['title']] = movie_url
+            links[movie_info['title']] = player_url
             favorite_movies_cache['favorites'] = favorites
             favorite_movies_cache['links'] = links
             await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.", reply_markup=build_favorites_keyboard())
