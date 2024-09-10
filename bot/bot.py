@@ -14,10 +14,8 @@ with open('config.json', 'r') as file:
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# URL-адреса поиска
+# URL-адрес поиска
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
-SEARCH_URL_BEFILM = 'https://t1.befilm1.life/index.php?do=search'
-SEARCH_URL_KINOGO = 'https://kinogoqu20.kinozi.pics/search'
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
@@ -25,7 +23,7 @@ def get_page(url, params=None):
     response.raise_for_status()  # Проверяем на ошибки
     return response.text
 
-# Функции для парсинга результатов поиска
+# Функция для парсинга результатов поиска
 def parse_search_results(content):
     soup = BeautifulSoup(content, 'html.parser')
     results = []
@@ -33,25 +31,6 @@ def parse_search_results(content):
         title = item.find('div', class_='th-title').get_text(strip=True)
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 1)", link))
-    return results
-
-def parse_befilm_search_results(content):
-    soup = BeautifulSoup(content, 'html.parser')
-    results = []
-    for item in soup.find_all('div', class_='th-item'):
-        title = item.find('div', class_='th-title').get_text(strip=True)
-        link = item.find('a', class_='th-in with-mask')['href']
-        results.append((f"{title} (Источник 2)", link))
-    return results
-
-def parse_kinogo_search_results(content):
-    soup = BeautifulSoup(content, 'html.parser')
-    results = []
-    for item in soup.find_all('div', class_='th-item'):
-        title = item.find('div', class_='th-title').get_text(strip=True)
-        link = item.find('a', class_='th-in with-mask')['href']
-        link = f"https://kinogoqu20.kinozi.pics{link}"  # добавляем базовый URL
-        results.append((f"{title} (Источник 3)", link))
     return results
 
 # Функция для извлечения информации о фильме
@@ -86,27 +65,14 @@ def extract_player_link(movie_page_content):
     # Если ссылка на плеер не найдена, возвращаем None
     return None
 
-
-# Функция для объединения результатов поиска
-def get_combined_search_results(search_term):
+# Функция для получения результатов поиска
+def get_search_results(search_term):
     # LordSerial
     params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
     search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
     results_lordserial = parse_search_results(search_content_lordserial)
 
-    # BeFilm
-    params_befilm = {'do': 'search', 'subaction': 'search', 'story': search_term}
-    search_content_befilm = get_page(SEARCH_URL_BEFILM, params=params_befilm)
-    results_befilm = parse_befilm_search_results(search_content_befilm)
-
-    # Kinogo
-    params_kinogo = {'do': 'search', 'subaction': 'search', 'q': search_term}
-    search_content_kinogo = get_page(SEARCH_URL_KINOGO, params=params_kinogo)
-    results_kinogo = parse_kinogo_search_results(search_content_kinogo)
-
-    # Объединяем результаты
-    combined_results = results_lordserial + results_befilm + results_kinogo
-    return combined_results
+    return results_lordserial
 
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results, current_page, total_pages):
@@ -178,7 +144,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Обработка перехода на следующую страницу
     elif data.startswith('next_'):
         page = int(data.split('_')[1])
-        search_term = search_results_cache.get('search_term')
         total_results = search_results_cache['total_results']
         total_pages = (total_results // 5) + (1 if total_results % 5 > 0 else 0)
 
@@ -189,7 +154,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Обработка перехода на предыдущую страницу
     elif data.startswith('prev_'):
         page = int(data.split('_')[1])
-        search_term = search_results_cache.get('search_term')
         total_results = search_results_cache['total_results']
         total_pages = (total_results // 5) + (1 if total_results % 5 > 0 else 0)
 
@@ -202,8 +166,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
     logger.info(f'Пользователь запросил поиск: {search_term}')
 
-    # Получаем результаты поиска с трех сайтов
-    search_results = get_combined_search_results(search_term)
+    # Получаем результаты поиска с сайта LordSerial
+    search_results = get_search_results(search_term)
     search_results_cache['results'] = search_results  # Сохраняем результаты поиска в кэш
     search_results_cache['search_term'] = search_term  # Сохраняем запрос
     search_results_cache['total_results'] = len(search_results)  # Сохраняем общее количество результатов
