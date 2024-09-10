@@ -4,6 +4,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
 from bs4 import BeautifulSoup
+import hashlib
 
 # Загрузка токена из файла конфигурации
 with open('config.json', 'r') as file:
@@ -84,6 +85,7 @@ def build_keyboard(results, current_page, total_pages):
 
     return InlineKeyboardMarkup(keyboard)
 
+
 # Функция для создания клавиатуры с кнопками на странице избранного
 def build_favorites_keyboard():
     keyboard = [
@@ -91,13 +93,18 @@ def build_favorites_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+def get_unique_id(url):
+    return hashlib.md5(url.encode()).hexdigest()[:10]
+
 # Функция для создания клавиатуры на странице фильма
 def build_movie_keyboard(movie_url):
+    unique_id = get_unique_id(movie_url)
     keyboard = [
-        [InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{movie_url}")],
+        [InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{unique_id}")],
         [InlineKeyboardButton("🏠 Главная", callback_data='home')]
     ]
     return InlineKeyboardMarkup(keyboard)
+
 
 # Обновленная функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -194,8 +201,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Обработка добавления в избранное
     elif data.startswith('favorite_'):
-        movie_url = data.split('_')[1]
-        movie_page_content = get_page(movie_url)
+        unique_id = data.split('_')[1]
+        # Найти оригинальный URL по уникальному идентификатору
+        original_url = find_original_url_by_id(unique_id)
+        movie_page_content = get_page(original_url)
         movie_info = extract_movie_info(movie_page_content)
         player_url = extract_player_link(movie_page_content)
         cover_image = extract_cover_image(movie_page_content)
