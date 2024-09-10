@@ -297,11 +297,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Основная функция
 def main():
-    application = Application.builder().token(TOKEN).build()
-
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     global favorite_movies_cache
     favorite_movies_cache = load_favorites()  # Загрузить данные избранного
     application = Application.builder().token(TOKEN).build()
