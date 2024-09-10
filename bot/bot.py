@@ -85,9 +85,9 @@ def build_keyboard(results, current_page, total_pages):
         keyboard.append([InlineKeyboardButton(title, callback_data=f"movie_{start_index + idx}")])
 
     if current_page > 1:
-        keyboard.append([InlineKeyboardButton("Предыдущая", callback_data=f'prev_{current_page - 1}')])
+        keyboard.append([InlineKeyboardButton("⬅️ Предыдущая", callback_data=f'prev_{current_page - 1}')])
     if current_page < total_pages:
-        keyboard.append([InlineKeyboardButton("Следующая", callback_data=f'next_{current_page + 1}')])
+        keyboard.append([InlineKeyboardButton("Следующая ➡️", callback_data=f'next_{current_page + 1}')])
 
     return InlineKeyboardMarkup(keyboard)
 
@@ -98,10 +98,10 @@ previous_state_cache = {}
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info('Пользователь нажал /start')
-    keyboard = [[InlineKeyboardButton("Поиск", callback_data='search')]]
+    keyboard = [[InlineKeyboardButton("🔍 Поиск", callback_data='search')]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_message = (
-        "Добро пожаловать в бота для поиска фильмов и сериалов от канала 48/91 (https://t.me/tommorow4891)! 🎬\n\n"
+        "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала 48/91 (https://t.me/tommorow4891)! 🎬\n\n"
         "Нажмите 'Поиск' для начала."
     )
     await update.message.reply_text(welcome_message, reply_markup=reply_markup)
@@ -129,11 +129,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             response_message = (
                 f"*Название:* {movie_info['title']}\n"
+                "──────────\n"  # Разделитель
                 f"*Описание:* {movie_info['description']}\n"
+                "──────────\n"  # Добавляет разделитель
             )
 
             if player_url:
-                response_message += f"[Смотреть фильм здесь]({player_url})"
+                response_message += f"[СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ]({player_url})"
             else:
                 response_message += "Не удалось найти плеер для этого фильма."
 
