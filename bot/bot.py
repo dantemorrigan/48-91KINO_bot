@@ -38,7 +38,6 @@ def extract_movie_info(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
     title = soup.find('h1').get_text(strip=True)
     description = soup.find('div', class_='fdesc').get_text(strip=True)
-
     return {
         'title': title,
         'description': description,
@@ -71,7 +70,6 @@ def get_search_results(search_term):
     params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
     search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
     results_lordserial = parse_search_results(search_content_lordserial)
-
     return results_lordserial
 
 # Функция для создания клавиатуры с кнопками
@@ -128,18 +126,18 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_url = extract_player_link(movie_page_content)
 
             response_message = (
-                f"*Название:* {movie_info['title']}\n"
+                f"<b>Название:</b> {movie_info['title']}\n"
                 "──────────\n"  # Разделитель
-                f"*Описание:* {movie_info['description']}\n"
+                f"<b>Описание:</b>\n<i>{movie_info['description']}</i>\n"  # Описание в виде курсивного текста
                 "──────────\n"  # Добавляет разделитель
             )
 
             if player_url:
-                response_message += f"[СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ]({player_url})"
+                response_message += f"<a href='{player_url}'>СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ</a>"
             else:
                 response_message += "Не удалось найти плеер для этого фильма."
 
-            await query.edit_message_text(response_message, parse_mode='Markdown')
+            await query.edit_message_text(response_message, parse_mode='HTML')
         else:
             await query.edit_message_text("Некорректный выбор фильма.")
 
@@ -168,6 +166,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
     logger.info(f'Пользователь запросил поиск: {search_term}')
 
+    # Отправляем сообщение с индикатором поиска
+    search_message = await update.message.reply_text('🔍 Поиск…')
+
     # Получаем результаты поиска с сайта LordSerial
     search_results = get_search_results(search_term)
     search_results_cache['results'] = search_results  # Сохраняем результаты поиска в кэш
@@ -177,11 +178,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f'Найдено {len(search_results)} результатов поиска')
 
     if not search_results:
-        await update.message.reply_text('Ничего не найдено. Попробуйте другой запрос.')
+        await search_message.edit_text('Ничего не найдено. Попробуйте другой запрос.')
     else:
         total_pages = (len(search_results) // 5) + (1 if len(search_results) % 5 > 0 else 0)
         reply_markup = build_keyboard(search_results, 1, total_pages)  # Начальная страница
-        await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
+        await search_message.edit_text('Результаты поиска:', reply_markup=reply_markup)
 
 # Основная функция
 def main():
