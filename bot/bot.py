@@ -17,6 +17,10 @@ logger = logging.getLogger(__name__)
 # URL-адрес поиска
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
 
+# Глобальные переменные для хранения результатов поиска и избранного
+search_results_cache = {}
+favorite_movies_cache = {}
+
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
     response = requests.get(url, params=params)
@@ -46,27 +50,18 @@ def extract_movie_info(movie_page_content):
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
-
-    # Пробуем найти iframe как обычно
     iframe = soup.find('iframe')
     if iframe:
         return iframe['src']
-
-    # Если iframe не найден, пробуем найти другой элемент с плеером
-    # Например, плеер может быть внутри div с классом 'player-container'
     player_div = soup.find('div', class_='player-container')
     if player_div:
-        # Проверяем наличие ссылки внутри этого блока
         player_link = player_div.find('a')
         if player_link and 'href' in player_link.attrs:
             return player_link['href']
-
-    # Если ссылка на плеер не найдена, возвращаем None
     return None
 
 # Функция для получения результатов поиска
 def get_search_results(search_term):
-    # LordSerial
     params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
     search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
     results_lordserial = parse_search_results(search_content_lordserial)
@@ -87,27 +82,42 @@ def build_keyboard(results, current_page, total_pages):
     if current_page < total_pages:
         keyboard.append([InlineKeyboardButton("Следующая ➡️", callback_data=f'next_{current_page + 1}')])
 
-    # Добавляем кнопку "Главная"
-    keyboard.append([InlineKeyboardButton("🏠 Главная", callback_data='home')])
-
     return InlineKeyboardMarkup(keyboard)
 
-
-# Глобальные переменные для хранения результатов поиска
-search_results_cache = {}
-previous_state_cache = {}
+# Функция для создания клавиатуры на странице фильма
+def build_movie_keyboard(movie_url):
+    keyboard = [
+        [InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{movie_url}")],
+        [InlineKeyboardButton("🏠 Главная", callback_data='home')]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info('Пользователь нажал /start')
-    keyboard = [[InlineKeyboardButton("🔍 Поиск", callback_data='search')]]
+    keyboard = [
+        [InlineKeyboardButton("🔍 Поиск", callback_data='search')],
+        [InlineKeyboardButton("⭐ Избранное", callback_data='favorites')]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_message = (
-        "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала 48/91 (https://t.me/tommorow4891)! 🎬\n\n"
+        "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала <b>48/91</b> (https://t.me/tommorow4891)! 🎬\n\n"
         "Нажмите 'Поиск' для начала."
     )
-    await update.message.reply_text(welcome_message, reply_markup=reply_markup)
 
+    # Проверяем, содержит ли обновление сообщение
+    if update.message:
+        chat_id = update.message.chat_id
+    else:
+        chat_id = update.callback_query.message.chat_id
+
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text=welcome_message,
+        reply_markup=reply_markup,
+        parse_mode='HTML'
+    )
+# Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -117,6 +127,15 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Обработка кнопки "Поиск"
     if data == 'search':
         await query.edit_message_text(text="Введите название фильма или сериала для поиска:")
+
+    # Обработка кнопки "Избранное"
+    elif data == 'favorites':
+        favorites = favorite_movies_cache.get('favorites', [])
+        if not favorites:
+            await query.edit_message_text('Избранные фильмы пусты.')
+        else:
+            favorites_message = '\n'.join([f"{title}" for title in favorites])
+            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}')
 
     # Обработка выбора фильма
     elif data.startswith('movie_'):
@@ -130,19 +149,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             response_message = (
                 f"<b>Название:</b> {movie_info['title']}\n"
-                "──────────\n"  # Разделитель
-                f"<b>Описание:</b>\n<i>{movie_info['description']}</i>\n"  # Описание в виде курсивного текста
-                "──────────\n"  # Добавляет разделитель
+                "──────────\n"
+                f"<b>Описание:</b>\n<i>{movie_info['description']}</i>\n"
+                "──────────\n"
             )
 
             if player_url:
-                response_message += f"<a href='{player_url}'>СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ</a>"
+                response_message += f"<b><a href='{player_url}'>СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ</a></b>"
             else:
                 response_message += "Не удалось найти плеер для этого фильма."
 
-            # Добавляем кнопку "Главная"
-            keyboard = [[InlineKeyboardButton("🏠 Главная", callback_data='home')]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            reply_markup = build_movie_keyboard(movie_url)
             await query.edit_message_text(response_message, parse_mode='HTML', reply_markup=reply_markup)
         else:
             await query.edit_message_text("Некорректный выбор фильма.")
@@ -167,16 +184,21 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup = build_keyboard(results, page, total_pages)
         await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
 
+    # Обработка добавления в избранное
+    elif data.startswith('favorite_'):
+        movie_url = data.split('_')[1]
+        movie_info = extract_movie_info(get_page(movie_url))
+        favorites = favorite_movies_cache.get('favorites', [])
+        if movie_info['title'] not in favorites:
+            favorites.append(movie_info['title'])
+            favorite_movies_cache['favorites'] = favorites
+            await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.")
+        else:
+            await query.edit_message_text(f"{movie_info['title']} уже в избранном.")
+
     # Обработка кнопки "Главная"
     elif data == 'home':
-        keyboard = [[InlineKeyboardButton("🔍 Поиск", callback_data='search')]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        welcome_message = (
-            "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала 48/91 (https://t.me/tommorow4891)! 🎬\n\n"
-            "Нажмите 'Поиск' для начала."
-        )
-        await query.edit_message_text(welcome_message, reply_markup=reply_markup)
-
+        await start(update, context)
 
 # Функция для обработки сообщений
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -200,7 +222,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_pages = (len(search_results) // 5) + (1 if len(search_results) % 5 > 0 else 0)
         reply_markup = build_keyboard(search_results, 1, total_pages)  # Начальная страница
         await search_message.edit_text('Результаты поиска:', reply_markup=reply_markup)
-
 
 # Основная функция
 def main():
