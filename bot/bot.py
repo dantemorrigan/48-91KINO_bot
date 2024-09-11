@@ -1,5 +1,6 @@
 import json
 import logging
+import sqlite3
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 import requests
@@ -20,9 +21,28 @@ SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
 
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
-# Глобальная переменная для хранения избранного для каждого пользователя
-favorite_movies_cache = {}  # Словарь: {chat_id: {favorites: [], links: {}, covers: {}}}
+favorite_movies_cache = {}  # Это можно удалить после интеграции с БД
 
+# Подключение к базе данных SQLite
+def get_db_connection():
+    conn = sqlite3.connect('favorites.db')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+# Создание таблиц, если они не существуют
+def create_tables():
+    conn = get_db_connection()
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS user_favorites (
+            chat_id INTEGER,
+            title TEXT,
+            url TEXT,
+            PRIMARY KEY (chat_id, title)
+        )
+    ''')
+    conn.close()
+
+create_tables()
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
@@ -134,9 +154,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # Функция для получения избранного конкретного пользователя:
 def get_user_favorites(chat_id):
-    if chat_id not in favorite_movies_cache:
-        favorite_movies_cache[chat_id] = {'favorites': [], 'links': {}, 'covers': {}}
-    return favorite_movies_cache[chat_id]
+    conn = get_db_connection()
+    cursor = conn.execute('SELECT title, url FROM user_favorites WHERE chat_id = ?', (chat_id,))
+    favorites = cursor.fetchall()
+    conn.close()
+    return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['url'] for row in favorites}}
 
 # Обновленная функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -182,139 +204,64 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if player_url:
                 response_message += f"<b><a href='{player_url}'>СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ</a></b>"
             else:
-                response_message += "Не удалось найти плеер для этого фильма."
+                response_message += "Не удалось найти плеер для данного фильма."
 
-            reply_markup = build_movie_keyboard(movie_url)
-            await query.edit_message_text(response_message, parse_mode='HTML', reply_markup=reply_markup)
-        else:
-            await query.edit_message_text("Некорректный выбор фильма.", reply_markup=build_favorites_keyboard())
+            await query.edit_message_text(
+                text=response_message,
+                parse_mode='HTML',
+                reply_markup=build_movie_keyboard(movie_url)
+            )
 
-    # Обработка перехода на следующую страницу
-    elif data.startswith('next_'):
-        page = int(data.split('_')[1])
-        total_results = search_results_cache['total_results']
-        total_pages = (total_results // 5) + (1 if total_results % 5 > 0 else 0)
-
-        results = search_results_cache.get('results', [])
-        reply_markup = build_keyboard(results, page, total_pages)
-        await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
-
-    # Обработка перехода на предыдущую страницу
-    elif data.startswith('prev_'):
-        page = int(data.split('_')[1])
-        total_results = search_results_cache['total_results']
-        total_pages = (total_results // 5) + (1 if total_results % 5 > 0 else 0)
-
-        results = search_results_cache.get('results', [])
-        reply_markup = build_keyboard(results, page, total_pages)
-        await query.edit_message_text('Результаты поиска:', reply_markup=reply_markup)
-
-    # Обработка добавления в избранное
+    # Обработка кнопки "Добавить в избранное"
     elif data.startswith('favorite_'):
         unique_id = data.split('_')[1]
-        chat_id = update.callback_query.message.chat_id  # Получаем chat_id пользователя
-        user_favorites = get_user_favorites(chat_id)
+        movie_url = search_results_cache.get('url_map', {}).get(unique_id, '')
+        chat_id = update.callback_query.message.chat_id
 
-        original_url = find_original_url_by_id(unique_id)
-        if original_url:
-            movie_page_content = get_page(original_url)
-            movie_info = extract_movie_info(movie_page_content)
-            player_url = extract_player_link(movie_page_content)
-            cover_image = extract_cover_image(movie_page_content)
-
-            if movie_info['title'] not in user_favorites['favorites']:
-                user_favorites['favorites'].append(movie_info['title'])
-                user_favorites['links'][movie_info['title']] = player_url
-                user_favorites['covers'][movie_info['title']] = cover_image
-                update_favorites_cache()  # Сохраняем изменения
-                await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.",
-                                              reply_markup=build_favorites_keyboard())
-            else:
-                await query.edit_message_text(f"{movie_info['title']} уже в избранном.",
-                                              reply_markup=build_favorites_keyboard())
+        if movie_url:
+            conn = get_db_connection()
+            conn.execute('INSERT OR IGNORE INTO user_favorites (chat_id, title, url) VALUES (?, ?, ?)',
+                         (chat_id, unique_id, movie_url))
+            conn.commit()
+            conn.close()
+            await query.edit_message_text('Фильм добавлен в избранное!', reply_markup=build_movie_keyboard(movie_url))
+        else:
+            await query.edit_message_text('Не удалось добавить фильм в избранное.')
 
     # Обработка кнопки "Главная"
     elif data == 'home':
         await start(update, context)
 
-# Файл для хранения избранного
-FAVORITES_FILE = 'favorites.json'
+    # Обработка кнопок навигации
+    elif data.startswith('prev_') or data.startswith('next_'):
+        current_page = int(data.split('_')[1])
+        results = search_results_cache.get('results', [])
+        total_pages = (len(results) + 4) // 5
+        reply_markup = build_keyboard(results, current_page, total_pages)
+        await query.edit_message_text(
+            text='Выберите фильм:',
+            reply_markup=reply_markup
+        )
 
-# Функция для загрузки избранного из файла
-def load_favorites():
-    try:
-        with open(FAVORITES_FILE, 'r') as file:
-            return json.load(file)
-    except FileNotFoundError:
-        return {'favorites': [], 'links': {}, 'covers': {}}
-    except json.JSONDecodeError:
-        return {'favorites': [], 'links': {}, 'covers': {}}
-
-# Функция для сохранения избранного в файл
-def save_favorites(data):
-    with open(FAVORITES_FILE, 'w') as file:
-        json.dump(data, file)
-
-# Загрузка избранного при запуске бота
-favorite_movies_cache = load_favorites()
-
-# Функция для обновления избранного
-def update_favorites_cache():
-    save_favorites(favorite_movies_cache)
-
-# Функция для извлечения обложек
-def extract_cover_image(movie_page_content):
-    """
-    Извлекает URL обложки фильма из HTML-контента страницы фильма.
-    """
-    soup = BeautifulSoup(movie_page_content, 'html.parser')
-    cover_image_tag = soup.find('div', class_='th-img img-resp-vert')
-    if cover_image_tag:
-        img_tag = cover_image_tag.find('img')
-        if img_tag:
-            return img_tag['src']
-    return None
-
-# Функция для поиска оригинального URL по уникальному идентификатору
-def find_original_url_by_id(unique_id):
-    for title, url in search_results_cache.get('results', []):
-        if get_unique_id(url) == unique_id:
-            return url
-    return None
-
-# Функция для обработки сообщений
+# Функция для обработки сообщений пользователей
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    search_term = update.message.text
-    logger.info(f'Пользователь запросил поиск: {search_term}')
+    user_input = update.message.text
+    chat_id = update.message.chat_id
 
-    # Отправляем сообщение с индикатором поиска
-    search_message = await update.message.reply_text('🔍 Поиск…')
+    if user_input:
+        results = get_search_results(user_input)
+        search_results_cache['results'] = results
+        search_results_cache['url_map'] = {get_unique_id(url): url for _, url in results}
+        total_pages = (len(results) + 4) // 5
+        reply_markup = build_keyboard(results, 1, total_pages)
+        await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
 
-    # Получаем результаты поиска с сайта LordSerial
-    search_results = get_search_results(search_term)
-    search_results_cache['results'] = search_results  # Сохраняем результаты поиска в кэш
-    search_results_cache['search_term'] = search_term  # Сохраняем запрос
-    search_results_cache['total_results'] = len(search_results)  # Сохраняем общее количество результатов
-
-    logger.info(f'Найдено {len(search_results)} результатов поиска')
-
-    if not search_results:
-        await search_message.edit_text('Ничего не найдено. Попробуйте другой запрос.')
-    else:
-        total_pages = (len(search_results) // 5) + (1 if len(search_results) % 5 > 0 else 0)
-        reply_markup = build_keyboard(search_results, 1, total_pages)  # Начальная страница
-        await search_message.edit_text('Результаты поиска:', reply_markup=reply_markup)
-
-# Основная функция
+# Главная функция для запуска бота
 def main():
-    global favorite_movies_cache
-    favorite_movies_cache = load_favorites()  # Загрузить данные избранного
     application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-
-    logger.info('Бот запущен')
+    application.add_handler(CallbackQueryHandler(button))
     application.run_polling()
 
 if __name__ == '__main__':
