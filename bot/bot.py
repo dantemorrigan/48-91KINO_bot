@@ -161,10 +161,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Функция для получения избранного конкретного пользователя:
 def get_user_favorites(chat_id):
     conn = get_db_connection()
-    cursor = conn.execute('SELECT title, url FROM user_favorites WHERE chat_id = ?', (chat_id,))
+    cursor = conn.execute('SELECT title, player_url FROM user_favorites WHERE chat_id = ?', (chat_id,))
     favorites = cursor.fetchall()
     conn.close()
-    return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['url'] for row in favorites}}
+    return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
 
 # Обновленная функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,9 +177,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if data == 'search':
         await query.edit_message_text(text="Введите название фильма или сериала для поиска:")
 
-    # Обработка кнопки "Избранное"
+    # Обновляем вывод избранного
     elif data == 'favorites':
-        chat_id = update.callback_query.message.chat_id  # Получаем chat_id пользователя
+        chat_id = update.callback_query.message.chat_id
         user_favorites = get_user_favorites(chat_id)
 
         if not user_favorites['favorites']:
@@ -189,7 +189,6 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                            for idx, title in enumerate(user_favorites['favorites'])])
             await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML',
                                           reply_markup=build_favorites_keyboard())
-
     # Обработка выбора фильма
     # Обработка выбора фильма
     elif data.startswith('movie_'):
@@ -226,7 +225,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=build_movie_keyboard(movie_url, is_favorite)
             )
 
-    # Обработка кнопки "Добавить в избранное"
+
     # Обработка кнопки "Добавить в избранное"
     elif data.startswith('favorite_'):
         unique_id = data.split('_')[1]
@@ -234,15 +233,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_id = update.callback_query.message.chat_id
 
         if movie_url:
-            conn = get_db_connection()
-            conn.execute('INSERT OR IGNORE INTO user_favorites (chat_id, title, url) VALUES (?, ?, ?)',
-                         (chat_id, unique_id, movie_url))
-            conn.commit()
-            conn.close()
+            movie_page_content = get_page(movie_url)
+            player_url = extract_player_link(movie_page_content)  # Получаем ссылку на плеер
 
-            # После добавления фильма в избранное обновляем сообщение и клавиатуру
-            await query.edit_message_text('Фильм добавлен в избранное!',
-                                          reply_markup=build_movie_keyboard(movie_url, is_favorite=True))
+            if player_url:
+                conn = get_db_connection()
+                conn.execute(
+                    'INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url) VALUES (?, ?, ?, ?)',
+                    (chat_id, unique_id, movie_url, player_url))  # Сохраняем ссылку на плеер
+                conn.commit()
+                conn.close()
+                await query.edit_message_text('Фильм добавлен в избранное!',
+                                              reply_markup=build_movie_keyboard(movie_url, is_favorite=True))
+            else:
+                await query.edit_message_text('Не удалось найти плеер для данного фильма.')
         else:
             await query.edit_message_text('Не удалось добавить фильм в избранное.')
 
@@ -260,6 +264,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text='Выберите фильм:',
             reply_markup=reply_markup
         )
+
+#Проверка колонки
+def add_player_url_column():
+    conn = get_db_connection()
+    try:
+        conn.execute('ALTER TABLE user_favorites ADD COLUMN player_url TEXT')
+        conn.commit()
+    except sqlite3.OperationalError:  # Если колонка уже существует, ничего не делаем
+        pass
+    finally:
+        conn.close()
+
+add_player_url_column()
+
 
 # Функция для обработки сообщений пользователей
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
