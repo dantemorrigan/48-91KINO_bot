@@ -118,13 +118,19 @@ def get_unique_id(url):
     return hashlib.md5(url.encode()).hexdigest()[:10]
 
 # Функция для создания клавиатуры на странице фильма
-def build_movie_keyboard(movie_url):
+def build_movie_keyboard(movie_url, is_favorite=False):
     unique_id = get_unique_id(movie_url)
-    keyboard = [
-        [InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{unique_id}")],
-        [InlineKeyboardButton("🏠 Главная", callback_data='home')]
-    ]
+    keyboard = []
+
+    if is_favorite:
+        keyboard.append([InlineKeyboardButton("✅ Уже в избранном", callback_data='none')])
+    else:
+        keyboard.append([InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{unique_id}")])
+
+    keyboard.append([InlineKeyboardButton("🏠 Главная", callback_data='home')])
+
     return InlineKeyboardMarkup(keyboard)
+
 
 # Обновленная функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -185,6 +191,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                           reply_markup=build_favorites_keyboard())
 
     # Обработка выбора фильма
+    # Обработка выбора фильма
     elif data.startswith('movie_'):
         index = int(data.split('_')[1])
         results = search_results_cache.get('results', [])
@@ -193,6 +200,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             movie_page_content = get_page(movie_url)
             movie_info = extract_movie_info(movie_page_content)
             player_url = extract_player_link(movie_page_content)
+
+            # Проверяем, находится ли фильм в избранном
+            chat_id = update.callback_query.message.chat_id
+            conn = get_db_connection()
+            cursor = conn.execute('SELECT 1 FROM user_favorites WHERE chat_id = ? AND url = ?', (chat_id, movie_url))
+            is_favorite = cursor.fetchone() is not None
+            conn.close()
 
             response_message = (
                 f"<b>Название:</b> {movie_info['title']}\n"
@@ -209,9 +223,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text(
                 text=response_message,
                 parse_mode='HTML',
-                reply_markup=build_movie_keyboard(movie_url)
+                reply_markup=build_movie_keyboard(movie_url, is_favorite)
             )
 
+    # Обработка кнопки "Добавить в избранное"
     # Обработка кнопки "Добавить в избранное"
     elif data.startswith('favorite_'):
         unique_id = data.split('_')[1]
@@ -224,7 +239,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                          (chat_id, unique_id, movie_url))
             conn.commit()
             conn.close()
-            await query.edit_message_text('Фильм добавлен в избранное!', reply_markup=build_movie_keyboard(movie_url))
+
+            # После добавления фильма в избранное обновляем сообщение и клавиатуру
+            await query.edit_message_text('Фильм добавлен в избранное!',
+                                          reply_markup=build_movie_keyboard(movie_url, is_favorite=True))
         else:
             await query.edit_message_text('Не удалось добавить фильм в избранное.')
 
