@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 # URL-адрес поиска
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
+SEARCH_URL_BEFILM1 = 'https://t1.befilm1.life/'
 
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
@@ -51,13 +52,24 @@ def get_page(url, params=None):
     return response.text
 
 # Функция для парсинга результатов поиска
-def parse_search_results(content):
+def parse_search_results_lordserial(content):
     soup = BeautifulSoup(content, 'html.parser')
     results = []
     for item in soup.find_all('div', class_='th-item'):
         title = item.find('div', class_='th-title').get_text(strip=True)
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 1)", link))
+    return results
+
+
+# Функция для парсинга результатов поиска с сайта befilm1
+def parse_search_results_befilm1(content):
+    soup = BeautifulSoup(content, 'html.parser')
+    results = []
+    for item in soup.find_all('div', class_='th-item'):
+        title = item.find('div', class_='th-title').get_text(strip=True)
+        link = item.find('a', class_='th-in with-mask')['href']
+        results.append((f"{title} (Источник 2)", link))
     return results
 
 # Функция для извлечения информации о фильме
@@ -87,8 +99,12 @@ def extract_player_link(movie_page_content):
 def get_search_results(search_term):
     params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
     search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
-    results_lordserial = parse_search_results(search_content_lordserial)
-    return results_lordserial
+    results_lordserial = parse_search_results_lordserial(search_content_lordserial)
+
+    search_content_befilm1 = get_page(SEARCH_URL_BEFILM1, params={'story': search_term})
+    results_befilm1 = parse_search_results_befilm1(search_content_befilm1)
+
+    return results_lordserial + results_befilm1
 
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results, current_page, total_pages):
