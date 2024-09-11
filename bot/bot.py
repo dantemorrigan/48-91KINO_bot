@@ -20,7 +20,9 @@ SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
 
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
-favorite_movies_cache = {}
+# Глобальная переменная для хранения избранного для каждого пользователя
+favorite_movies_cache = {}  # Словарь: {chat_id: {favorites: [], links: {}, covers: {}}}
+
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
@@ -130,6 +132,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
 
+# Функция для получения избранного конкретного пользователя:
+def get_user_favorites(chat_id):
+    if chat_id not in favorite_movies_cache:
+        favorite_movies_cache[chat_id] = {'favorites': [], 'links': {}, 'covers': {}}
+    return favorite_movies_cache[chat_id]
+
 # Обновленная функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -143,12 +151,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Обработка кнопки "Избранное"
     elif data == 'favorites':
-        favorites = favorite_movies_cache.get('favorites', [])
-        if not favorites:
+        chat_id = update.callback_query.message.chat_id  # Получаем chat_id пользователя
+        user_favorites = get_user_favorites(chat_id)
+
+        if not user_favorites['favorites']:
             await query.edit_message_text('Избранные фильмы пусты.', reply_markup=build_favorites_keyboard())
         else:
-            favorites_message = '\n'.join([f"{idx + 1}. <a href='{favorite_movies_cache['links'][title]}'>{title}</a>" for idx, title in enumerate(favorites)])
-            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML', reply_markup=build_favorites_keyboard())
+            favorites_message = '\n'.join([f"{idx + 1}. <a href='{user_favorites['links'][title]}'>{title}</a>"
+                                           for idx, title in enumerate(user_favorites['favorites'])])
+            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML',
+                                          reply_markup=build_favorites_keyboard())
 
     # Обработка выбора фильма
     elif data.startswith('movie_'):
@@ -200,7 +212,9 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Обработка добавления в избранное
     elif data.startswith('favorite_'):
         unique_id = data.split('_')[1]
-        # Найти оригинальный URL по уникальному идентификатору
+        chat_id = update.callback_query.message.chat_id  # Получаем chat_id пользователя
+        user_favorites = get_user_favorites(chat_id)
+
         original_url = find_original_url_by_id(unique_id)
         if original_url:
             movie_page_content = get_page(original_url)
@@ -208,26 +222,16 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_url = extract_player_link(movie_page_content)
             cover_image = extract_cover_image(movie_page_content)
 
-            favorites = favorite_movies_cache.get('favorites', [])
-            links = favorite_movies_cache.get('links', {})
-            covers = favorite_movies_cache.get('covers', {})
-
-            if movie_info['title'] not in favorites:
-                favorites.append(movie_info['title'])
-                links[movie_info['title']] = player_url
-                covers[movie_info['title']] = cover_image
-                favorite_movies_cache['favorites'] = favorites
-                favorite_movies_cache['links'] = links
-                favorite_movies_cache['covers'] = covers
-                update_favorites_cache()
+            if movie_info['title'] not in user_favorites['favorites']:
+                user_favorites['favorites'].append(movie_info['title'])
+                user_favorites['links'][movie_info['title']] = player_url
+                user_favorites['covers'][movie_info['title']] = cover_image
+                update_favorites_cache()  # Сохраняем изменения
                 await query.edit_message_text(f"{movie_info['title']} добавлен в избранное.",
                                               reply_markup=build_favorites_keyboard())
             else:
                 await query.edit_message_text(f"{movie_info['title']} уже в избранном.",
                                               reply_markup=build_favorites_keyboard())
-        else:
-            await query.edit_message_text("Не удалось найти фильм для добавления в избранное.",
-                                          reply_markup=build_favorites_keyboard())
 
     # Обработка кнопки "Главная"
     elif data == 'home':
