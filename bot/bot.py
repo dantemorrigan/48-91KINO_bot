@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 # URL-адрес поиска
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
-SEARCH_URL_BEFILM1 = 'https://t1.befilm1.life/'
+SEARCH_URL_BEFILM1 = 'https://t1.befilm1.life/index.php?do=search'
 
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
@@ -38,6 +38,7 @@ def create_tables():
             chat_id INTEGER,
             title TEXT,
             url TEXT,
+            player_url TEXT,
             PRIMARY KEY (chat_id, title)
         )
     ''')
@@ -47,8 +48,10 @@ create_tables()
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
+    logger.info(f"Запрос на URL: {url} с параметрами: {params}")
     response = requests.get(url, params=params)
     response.raise_for_status()  # Проверяем на ошибки
+    logger.info(f"Получен ответ: {response.text[:200]}")  # Логируем только часть ответа
     return response.text
 
 # Функция для парсинга результатов поиска
@@ -60,7 +63,6 @@ def parse_search_results_lordserial(content):
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 1)", link))
     return results
-
 
 # Функция для парсинга результатов поиска с сайта befilm1
 def parse_search_results_befilm1(content):
@@ -85,26 +87,52 @@ def extract_movie_info(movie_page_content):
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
+    logger.info(
+        "Страница фильма для проверки плеера:\n" + movie_page_content[:1000])  # Логируем начало страницы для проверки
+
+    # Попробуем сначала найти iframe
     iframe = soup.find('iframe')
-    if iframe:
+    if iframe and 'src' in iframe.attrs:
+        logger.info("Найден iframe: " + iframe['src'])
         return iframe['src']
+
+    # Попробуем найти div с классом 'player-container'
     player_div = soup.find('div', class_='player-container')
     if player_div:
         player_link = player_div.find('a')
         if player_link and 'href' in player_link.attrs:
+            logger.info("Найден player_link: " + player_link['href'])
             return player_link['href']
+
+    # Если ничего не найдено, вернем None
+    logger.info("Плеер не найден")
     return None
 
+
 # Функция для получения результатов поиска
+logging.basicConfig(level=logging.ERROR)
+
 def get_search_results(search_term):
-    params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
-    search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
-    results_lordserial = parse_search_results_lordserial(search_content_lordserial)
+    try:
+        # Определите параметры для первого источника
+        params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
+        # Определите параметры для второго источника
+        params_befilm1 = {'story': search_term}
 
-    search_content_befilm1 = get_page(SEARCH_URL_BEFILM1, params={'story': search_term})
-    results_befilm1 = parse_search_results_befilm1(search_content_befilm1)
+        # Получите результаты поиска для первого источника
+        search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
+        results_lordserial = parse_search_results_lordserial(search_content_lordserial)
 
-    return results_lordserial + results_befilm1
+        # Получите результаты поиска для второго источника
+        search_content_befilm1 = get_page(SEARCH_URL_BEFILM1, params=params_befilm1)
+        results_befilm1 = parse_search_results_befilm1(search_content_befilm1)
+
+        # Объедините результаты и верните
+        return results_lordserial + results_befilm1
+
+    except Exception as e:
+        logging.error(f"Ошибка при выполнении поиска: {e}")
+        return []
 
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results, current_page, total_pages):
@@ -143,10 +171,13 @@ def build_movie_keyboard(movie_url, is_favorite=False):
     else:
         keyboard.append([InlineKeyboardButton("⭐ Добавить в избранное", callback_data=f"favorite_{unique_id}")])
 
+    # Добавление кнопки "СМОТРЕТЬ ФИЛЬМ" если ссылка на плеер есть
+    if movie_url:
+        keyboard.append([InlineKeyboardButton("▶️ Смотреть фильм", url=movie_url)])
+
     keyboard.append([InlineKeyboardButton("🏠 Главная", callback_data='home')])
 
     return InlineKeyboardMarkup(keyboard)
-
 
 # Обновленная функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -177,7 +208,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Функция для получения избранного конкретного пользователя:
 def get_user_favorites(chat_id):
     conn = get_db_connection()
-    cursor = conn.execute('SELECT title, player_url FROM user_favorites WHERE chat_id = ?', (chat_id,))
+    cursor = conn.execute('SELECT title, url, player_url FROM user_favorites WHERE chat_id = ?', (chat_id,))
     favorites = cursor.fetchall()
     conn.close()
     return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
@@ -199,121 +230,90 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_favorites = get_user_favorites(chat_id)
 
         if not user_favorites['favorites']:
-            await query.edit_message_text('Избранные фильмы пусты.', reply_markup=build_favorites_keyboard())
+            await query.edit_message_text(text="Избранное пусто. Нажмите 'Главная' для возврата.")
         else:
-            favorites_message = '\n'.join([f"{idx + 1}. <a href='{user_favorites['links'][title]}'>{title}</a>"
-                                           for idx, title in enumerate(user_favorites['favorites'])])
-            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML',
-                                          reply_markup=build_favorites_keyboard())
-    # Обработка выбора фильма
-    # Обработка выбора фильма
+            favorites_text = "\n".join([f"{idx + 1}. {title}" for idx, title in enumerate(user_favorites['favorites'])])
+            reply_markup = build_favorites_keyboard()
+            await query.edit_message_text(
+                text=f"Ваши избранные фильмы:\n{favorites_text}",
+                reply_markup=reply_markup
+            )
+
+    # Обработка кнопок страницы фильма
     elif data.startswith('movie_'):
         index = int(data.split('_')[1])
-        results = search_results_cache.get('results', [])
-        if 0 <= index < len(results):
-            title, movie_url = results[index]
-            movie_page_content = get_page(movie_url)
-            movie_info = extract_movie_info(movie_page_content)
-            player_url = extract_player_link(movie_page_content)
+        search_results = search_results_cache.get('results', [])
+        movie_url = search_results[index][1]
+        movie_page_content = get_page(movie_url)
+        movie_info = extract_movie_info(movie_page_content)
+        player_link = extract_player_link(movie_page_content)
 
-            # Проверяем, находится ли фильм в избранном
-            chat_id = update.callback_query.message.chat_id
-            conn = get_db_connection()
-            cursor = conn.execute('SELECT 1 FROM user_favorites WHERE chat_id = ? AND url = ?', (chat_id, movie_url))
-            is_favorite = cursor.fetchone() is not None
-            conn.close()
-
-            response_message = (
-                f"<b>Название:</b> {movie_info['title']}\n"
-                "──────────\n"
-                f"<b>Описание:</b>\n<i>{movie_info['description']}</i>\n"
-                "──────────\n"
-            )
-
-            if player_url:
-                response_message += f"<b><a href='{player_url}'>СМОТРЕТЬ ФИЛЬМ ЗДЕСЬ</a></b>"
-            else:
-                response_message += "Не удалось найти плеер для данного фильма."
-
+        if player_link:
+            keyboard = build_movie_keyboard(player_link, is_favorite=False)
             await query.edit_message_text(
-                text=response_message,
-                parse_mode='HTML',
-                reply_markup=build_movie_keyboard(movie_url, is_favorite)
+                text=f"<b>{movie_info['title']}</b>\n\n{movie_info['description']}",
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+        else:
+            await query.edit_message_text(
+                text=f"<b>{movie_info['title']}</b>\n\n{movie_info['description']}\n\n🛑 Ссылка на плеер не найдена.",
+                parse_mode='HTML'
             )
 
-
-    # Обработка кнопки "Добавить в избранное"
+    # Обработка кнопок "Добавить в избранное" и "Избранное"
     elif data.startswith('favorite_'):
         unique_id = data.split('_')[1]
-        movie_url = search_results_cache.get('url_map', {}).get(unique_id, '')
         chat_id = update.callback_query.message.chat_id
 
-        if movie_url:
-            movie_page_content = get_page(movie_url)
-            player_url = extract_player_link(movie_page_content)  # Получаем ссылку на плеер
+        # Найти URL для добавления в избранное
+        for title, url in search_results_cache.get('results', []):
+            if get_unique_id(url) == unique_id:
+                player_url = extract_player_link(get_page(url))
+                if player_url:
+                    conn = get_db_connection()
+                    conn.execute('INSERT OR REPLACE INTO user_favorites (chat_id, title, url, player_url) VALUES (?, ?, ?, ?)',
+                                 (chat_id, title, url, player_url))
+                    conn.commit()
+                    conn.close()
+                    await query.edit_message_text(text="Фильм добавлен в избранное.", parse_mode='HTML')
+                else:
+                    await query.edit_message_text(text="Не удалось найти ссылку на плеер.", parse_mode='HTML')
+                break
 
-            if player_url:
-                conn = get_db_connection()
-                conn.execute(
-                    'INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url) VALUES (?, ?, ?, ?)',
-                    (chat_id, unique_id, movie_url, player_url))  # Сохраняем ссылку на плеер
-                conn.commit()
-                conn.close()
-                await query.edit_message_text('Фильм добавлен в избранное!',
-                                              reply_markup=build_movie_keyboard(movie_url, is_favorite=True))
-            else:
-                await query.edit_message_text('Не удалось найти плеер для данного фильма.')
-        else:
-            await query.edit_message_text('Не удалось добавить фильм в избранное.')
-
-    # Обработка кнопки "Главная"
     elif data == 'home':
         await start(update, context)
 
     # Обработка кнопок навигации
     elif data.startswith('prev_') or data.startswith('next_'):
         current_page = int(data.split('_')[1])
-        results = search_results_cache.get('results', [])
-        total_pages = (len(results) + 4) // 5
-        reply_markup = build_keyboard(results, current_page, total_pages)
-        await query.edit_message_text(
-            text='Выберите фильм:',
-            reply_markup=reply_markup
-        )
+        search_term = search_results_cache.get('search_term', '')
+        search_results = get_search_results(search_term)
+        search_results_cache['results'] = search_results
+        total_pages = (len(search_results) + 4) // 5
+        reply_markup = build_keyboard(search_results, current_page, total_pages)
+        await query.edit_message_text(text="Результаты поиска:", reply_markup=reply_markup)
 
-#Проверка колонки
-def add_player_url_column():
-    conn = get_db_connection()
-    try:
-        conn.execute('ALTER TABLE user_favorites ADD COLUMN player_url TEXT')
-        conn.commit()
-    except sqlite3.OperationalError:  # Если колонка уже существует, ничего не делаем
-        pass
-    finally:
-        conn.close()
-
-add_player_url_column()
-
-
-# Функция для обработки сообщений пользователей
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text
+    text = update.message.text
     chat_id = update.message.chat_id
 
-    if user_input:
-        results = get_search_results(user_input)
-        search_results_cache['results'] = results
-        search_results_cache['url_map'] = {get_unique_id(url): url for _, url in results}
-        total_pages = (len(results) + 4) // 5
-        reply_markup = build_keyboard(results, 1, total_pages)
-        await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
+    if text:
+        search_results = get_search_results(text)
+        search_results_cache['results'] = search_results
+        search_results_cache['search_term'] = text
 
-# Главная функция для запуска бота
+        total_pages = (len(search_results) + 4) // 5
+        reply_markup = build_keyboard(search_results, 1, total_pages)
+        await update.message.reply_text(text="Результаты поиска:", reply_markup=reply_markup)
+
 def main():
     application = Application.builder().token(TOKEN).build()
+
     application.add_handler(CommandHandler('start', start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     application.add_handler(CallbackQueryHandler(button))
+
     application.run_polling()
 
 if __name__ == '__main__':
