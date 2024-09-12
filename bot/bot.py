@@ -215,7 +215,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info('Пользователь нажал /start')
     keyboard = [
         [InlineKeyboardButton("🔍 Поиск", callback_data='search')],
-        [InlineKeyboardButton("⭐ Избранное", callback_data='favorites')]
+        [InlineKeyboardButton("⭐ Избранное", callback_data='favorites')],
+        [InlineKeyboardButton("👾 Исходный код бота на Github", url='https://github.com/dantemorrigan/48-91KINO_bot')]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     welcome_message = (
