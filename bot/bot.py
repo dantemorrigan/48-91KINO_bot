@@ -123,7 +123,7 @@ def build_movie_keyboard(movie_url, player_url, is_favorite=False):
     keyboard = []
 
     if player_url:
-        keyboard.append([InlineKeyboardButton("🎥 СМОТРЕТЬ", url=player_url)])
+        keyboard.append([InlineKeyboardButton("▶️ СМОТРЕТЬ", url=player_url)])
     else:
         keyboard.append([InlineKeyboardButton("❓ Не найден плеер", callback_data='none')])
 
