@@ -21,7 +21,6 @@ SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
 
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
-favorite_movies_cache = {}  # Это можно удалить после интеграции с БД
 
 # Подключение к базе данных SQLite
 def get_db_connection():
@@ -37,6 +36,7 @@ def create_tables():
             chat_id INTEGER,
             title TEXT,
             url TEXT,
+            player_url TEXT,
             PRIMARY KEY (chat_id, title)
         )
     ''')
@@ -136,9 +136,15 @@ def build_movie_keyboard(movie_url, player_url, is_favorite=False):
 
     return InlineKeyboardMarkup(keyboard)
 
+# Функция для получения избранного конкретного пользователя:
+def get_user_favorites(chat_id):
+    conn = get_db_connection()
+    cursor = conn.execute('SELECT title, player_url FROM user_favorites WHERE chat_id = ?', (chat_id,))
+    favorites = cursor.fetchall()
+    conn.close()
+    return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
 
-
-# Обновленная функция для обработки команды /start
+# Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info('Пользователь нажал /start')
     keyboard = [
@@ -164,15 +170,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='HTML'
     )
 
-# Функция для получения избранного конкретного пользователя:
-def get_user_favorites(chat_id):
-    conn = get_db_connection()
-    cursor = conn.execute('SELECT title, player_url FROM user_favorites WHERE chat_id = ?', (chat_id,))
-    favorites = cursor.fetchall()
-    conn.close()
-    return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
-
-# Обновленная функция для обработки нажатия кнопки
+# Функция для обработки нажатия кнопки
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
@@ -232,106 +230,60 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_url = extract_player_link(movie_page_content)
 
             if player_url:
+                movie_info = extract_movie_info(movie_page_content)
+
                 conn = get_db_connection()
-                conn.execute(
-                    'INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url) VALUES (?, ?, ?, ?)',
-                    (chat_id, unique_id, movie_url, player_url))
+                conn.execute('''
+                    INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url)
+                    VALUES (?, ?, ?, ?)
+                ''', (chat_id, movie_info['title'], movie_url, player_url))
                 conn.commit()
                 conn.close()
-                await query.edit_message_text('Фильм добавлен в избранное!',
-                                              reply_markup=build_movie_keyboard(movie_url, player_url, is_favorite=True))
-            else:
-                await query.edit_message_text('Не удалось найти плеер для данного фильма.')
+
+                await query.answer("Фильм добавлен в избранное.", show_alert=True)
+
+                await query.edit_message_reply_markup(reply_markup=build_movie_keyboard(movie_url, player_url, True))
+
         else:
-            await query.edit_message_text('Не удалось добавить фильм в избранное.')
+            await query.answer("Произошла ошибка. Попробуйте снова.", show_alert=True)
 
     elif data == 'home':
         await start(update, context)
 
-    elif data.startswith('prev_') or data.startswith('next_'):
+    elif data.startswith('next_') or data.startswith('prev_'):
         current_page = int(data.split('_')[1])
         results = search_results_cache.get('results', [])
-        total_pages = (len(results) + 4) // 5
-        reply_markup = build_keyboard(results, current_page, total_pages)
-        await query.edit_message_text(
-            text='Выберите фильм:',
-            reply_markup=reply_markup
-        )
+        total_pages = search_results_cache.get('total_pages', 1)
+        await query.edit_message_reply_markup(reply_markup=build_keyboard(results, current_page, total_pages))
 
-
-    # Обработка кнопки "Добавить в избранное"
-    elif data.startswith('favorite_'):
-        unique_id = data.split('_')[1]
-        movie_url = search_results_cache.get('url_map', {}).get(unique_id, '')
-        chat_id = update.callback_query.message.chat_id
-
-        if movie_url:
-            movie_page_content = get_page(movie_url)
-            player_url = extract_player_link(movie_page_content)  # Получаем ссылку на плеер
-
-            if player_url:
-                conn = get_db_connection()
-                conn.execute(
-                    'INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url) VALUES (?, ?, ?, ?)',
-                    (chat_id, unique_id, movie_url, player_url))  # Сохраняем ссылку на плеер
-                conn.commit()
-                conn.close()
-                await query.edit_message_text('Фильм добавлен в избранное!',
-                                              reply_markup=build_movie_keyboard(movie_url, is_favorite=True))
-            else:
-                await query.edit_message_text('Не удалось найти плеер для данного фильма.')
-        else:
-            await query.edit_message_text('Не удалось добавить фильм в избранное.')
-
-    # Обработка кнопки "Главная"
-    elif data == 'home':
-        await start(update, context)
-
-    # Обработка кнопок навигации
-    elif data.startswith('prev_') or data.startswith('next_'):
-        current_page = int(data.split('_')[1])
-        results = search_results_cache.get('results', [])
-        total_pages = (len(results) + 4) // 5
-        reply_markup = build_keyboard(results, current_page, total_pages)
-        await query.edit_message_text(
-            text='Выберите фильм:',
-            reply_markup=reply_markup
-        )
-
-#Проверка колонки
-def add_player_url_column():
-    conn = get_db_connection()
-    try:
-        conn.execute('ALTER TABLE user_favorites ADD COLUMN player_url TEXT')
-        conn.commit()
-    except sqlite3.OperationalError:  # Если колонка уже существует, ничего не делаем
-        pass
-    finally:
-        conn.close()
-
-add_player_url_column()
-
-
-# Функция для обработки сообщений пользователей
+# Функция для обработки текста от пользователя (поиск)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_input = update.message.text
+    search_term = update.message.text
     chat_id = update.message.chat_id
 
-    if user_input:
-        results = get_search_results(user_input)
-        search_results_cache['results'] = results
-        search_results_cache['url_map'] = {get_unique_id(url): url for _, url in results}
-        total_pages = (len(results) + 4) // 5
-        reply_markup = build_keyboard(results, 1, total_pages)
-        await update.message.reply_text('Результаты поиска:', reply_markup=reply_markup)
+    results = get_search_results(search_term)
+    search_results_cache['results'] = results
+    search_results_cache['url_map'] = {get_unique_id(url): url for _, url in results}
 
-# Главная функция для запуска бота
-def main():
-    application = Application.builder().token(TOKEN).build()
-    application.add_handler(CommandHandler('start', start))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(button))
-    application.run_polling()
+    total_pages = (len(results) + 4) // 5
+    search_results_cache['total_pages'] = total_pages
+
+    if not results:
+        await context.bot.send_message(chat_id=chat_id, text="Результатов не найдено.")
+    else:
+        await context.bot.send_message(chat_id=chat_id, text="Результаты поиска:",
+                                       reply_markup=build_keyboard(results, current_page=1, total_pages=total_pages))
+
+# Функция для обработки ошибок
+async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.error('Произошла ошибка при обработке обновления:', exc_info=context.error)
 
 if __name__ == '__main__':
-    main()
+    application = Application.builder().token(TOKEN).build()
+
+    application.add_handler(CommandHandler('start', start))
+    application.add_handler(CallbackQueryHandler(button))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_error_handler(error)
+
+    application.run_polling()
