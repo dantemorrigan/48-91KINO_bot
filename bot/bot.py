@@ -8,9 +8,10 @@ from bs4 import BeautifulSoup
 import hashlib
 
 # Загрузка токена из файла конфигурации
-with open('config.json', 'r') as file:
+with open('config.json', 'r', encoding='utf-8') as file:
     config = json.load(file)
     TOKEN = config['TOKEN']
+
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
