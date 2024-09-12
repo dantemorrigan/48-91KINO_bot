@@ -23,11 +23,13 @@ SEARCH_URL_GOODFILMS = 'https://zhqpg.goodfilms.fun/index.php?do=search'
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
 
+
 # Подключение к базе данных SQLite
 def get_db_connection():
     conn = sqlite3.connect('favorites.db')
     conn.row_factory = sqlite3.Row
     return conn
+
 
 # Создание таблиц, если они не существуют
 def create_tables():
@@ -43,7 +45,9 @@ def create_tables():
     ''')
     conn.close()
 
+
 create_tables()
+
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
@@ -60,6 +64,7 @@ def get_search_results_lordserial(search_term):
     search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
     return parse_search_results_lordserial(search_content_lordserial)
 
+
 # Функция для парсинга результатов поиска с сайта lordserial
 def parse_search_results_lordserial(content):
     soup = BeautifulSoup(content, 'html.parser')
@@ -69,6 +74,7 @@ def parse_search_results_lordserial(content):
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 1)", link))
     return results
+
 
 # Функция для получения результатов поиска с сайта goodfilms
 def get_search_results_goodfilms(search_term):
@@ -81,6 +87,7 @@ def get_search_results_goodfilms(search_term):
     search_content_goodfilms = requests.post(SEARCH_URL_GOODFILMS, data=params_goodfilms).text
     return parse_search_results_goodfilms(search_content_goodfilms)
 
+
 # Функция для парсинга результатов поиска с сайта goodfilms
 def parse_search_results_goodfilms(content):
     soup = BeautifulSoup(content, 'html.parser')
@@ -91,20 +98,28 @@ def parse_search_results_goodfilms(content):
         results.append((f"{title} (Источник 2)", link))
     return results
 
+
 # Функция для получения результатов поиска из двух источников
 def get_search_results(search_term):
     results_lordserial = get_search_results_lordserial(search_term)
     results_goodfilms = get_search_results_goodfilms(search_term)
     return results_lordserial + results_goodfilms
 
+
 # Функция для извлечения информации о фильме
-def extract_movie_info(movie_page_content):
+def extract_movie_info(movie_page_content, source):
     soup = BeautifulSoup(movie_page_content, 'html.parser')
     title = soup.find('h1')
-    description_div = soup.find('div', class_='fdesc')
+
+    if source == 'goodfilms':
+        description_div = soup.find('div', class_='pmovie__descr')
+        description = description_div.find('div', class_='pmovie__text full-text clearfix') if description_div else None
+        description_text = description.get_text(strip=True) if description else 'Описание отсутствует'
+    else:
+        description_div = soup.find('div', class_='fdesc')
+        description_text = description_div.get_text(strip=True) if description_div else 'Описание отсутствует'
 
     title_text = title.get_text(strip=True) if title else 'Неизвестно'
-    description_text = description_div.get_text(strip=True) if description_div else 'Описание отсутствует'
 
     return {
         'title': title_text,
@@ -134,7 +149,6 @@ def extract_player_link(movie_page_content):
     return None
 
 
-
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results, current_page, total_pages):
     keyboard = []
@@ -152,6 +166,7 @@ def build_keyboard(results, current_page, total_pages):
 
     return InlineKeyboardMarkup(keyboard)
 
+
 # Функция для создания клавиатуры с кнопками на странице избранного
 def build_favorites_keyboard():
     keyboard = [
@@ -159,8 +174,10 @@ def build_favorites_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 def get_unique_id(url):
     return hashlib.md5(url.encode()).hexdigest()[:10]
+
 
 # Функция для создания клавиатуры на странице фильма
 def build_movie_keyboard(movie_url, player_url, is_favorite=False):
@@ -183,13 +200,15 @@ def build_movie_keyboard(movie_url, player_url, is_favorite=False):
     return InlineKeyboardMarkup(keyboard)
 
 
-# Функция для получения избранного конкретного пользователя:
+# Функция для получения избранного конкретного пользователя
 def get_user_favorites(chat_id):
     conn = get_db_connection()
     cursor = conn.execute('SELECT title, player_url FROM user_favorites WHERE chat_id = ?', (chat_id,))
     favorites = cursor.fetchall()
     conn.close()
-    return {'favorites': [row['title'] for row in favorites], 'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
+    return {'favorites': [row['title'] for row in favorites],
+            'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
+
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -216,6 +235,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup,
         parse_mode='HTML'
     )
+
 
 # Функция для обработки нажатия кнопки
 # Обновленный код для обработки нажатий на кнопку фильма
@@ -245,8 +265,10 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         results = search_results_cache.get('results', [])
         if 0 <= index < len(results):
             title, movie_url = results[index]
+            # Определяем источник для парсинга
+            source = 'goodfilms' if 'Источник 2' in title else 'lordserial'
             movie_page_content = get_page(movie_url)
-            movie_info = extract_movie_info(movie_page_content)
+            movie_info = extract_movie_info(movie_page_content, source)
             player_url = extract_player_link(movie_page_content)
 
             chat_id = update.callback_query.message.chat_id
@@ -278,7 +300,8 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_url = extract_player_link(movie_page_content)
 
             if player_url:
-                movie_info = extract_movie_info(movie_page_content)
+                movie_info = extract_movie_info(movie_page_content,
+                                                'goodfilms')  # При добавлении в избранное указываем источник
 
                 conn = get_db_connection()
                 conn.execute('''INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url)
@@ -301,6 +324,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_pages = search_results_cache.get('total_pages', 1)
         await query.edit_message_reply_markup(reply_markup=build_keyboard(results, current_page, total_pages))
 
+
 # Функция для обработки текста от пользователя (поиск)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
@@ -319,9 +343,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(chat_id=chat_id, text="Результаты поиска:",
                                        reply_markup=build_keyboard(results, current_page=1, total_pages=total_pages))
 
+
 # Функция для обработки ошибок
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error('Произошла ошибка при обработке обновления:', exc_info=context.error)
+
 
 if __name__ == '__main__':
     application = Application.builder().token(TOKEN).build()
