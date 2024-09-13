@@ -168,10 +168,13 @@ def build_keyboard(results, current_page, total_pages):
     return InlineKeyboardMarkup(keyboard)
 
 
+
+
 # Функция для создания клавиатуры с кнопками на странице избранного
 def build_favorites_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🏠 Главная", callback_data='home')]
+        [InlineKeyboardButton("🏠 Главная", callback_data='home')],
+        [InlineKeyboardButton("🗑 Очистить избранное", callback_data='clear_favorites')]
     ]
     return InlineKeyboardMarkup(keyboard)
 
@@ -211,35 +214,43 @@ def get_user_favorites(chat_id):
             'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
 
 
+
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info('Пользователь нажал /start')
+
+    # Логирование chat_id и типа обновления
+    if update.message:
+        chat_id = update.message.chat_id
+        logger.info(f'Обновление типа: message, chat_id: {chat_id}')
+    elif update.callback_query:
+        chat_id = update.callback_query.message.chat_id
+        logger.info(f'Обновление типа: callback_query, chat_id: {chat_id}')
+
+    # Клавиатура
     keyboard = [
         [InlineKeyboardButton("🔍 Поиск", callback_data='search')],
         [InlineKeyboardButton("⭐ Избранное", callback_data='favorites')],
-        [InlineKeyboardButton("👾 Исходный код бота на Github", url='https://github.com/dantemorrigan/48-91KINO_bot')]
+        [InlineKeyboardButton("👾 Исходный код бота на Github", url='https://github.com/dantemorrigan/48-91KINO_bot')],
+        [InlineKeyboardButton("💰 Поддержать проект", url='https://boosty.to/svdo')]  # Добавили кнопку
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
+
+    # Сообщение с жирным текстом-ссылкой
     welcome_message = (
-        "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала <b>48/91</b> (https://t.me/tommorow4891)! 🎬\n\n"
+        "🎬 Добро пожаловать в бота для поиска фильмов и сериалов от канала "
+        '<a href="https://t.me/tommorow4891"><b>48/91</b></a>! 🎬\n\n'
         "Нажмите 'Поиск' для начала."
     )
 
-    # Проверяем, содержит ли обновление сообщение
-    if update.message:
-        chat_id = update.message.chat_id
-    else:
-        chat_id = update.callback_query.message.chat_id
-
+    # Отправляем сообщение
     await context.bot.send_message(
         chat_id=chat_id,
         text=welcome_message,
         reply_markup=reply_markup,
-        parse_mode='HTML'
+        parse_mode='HTML'  # Включаем HTML для работы ссылок и форматирования
     )
 
-
-# Функция для обработки нажатия кнопки
 # Обновленный код для обработки нажатий на кнопку фильма
 async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -255,12 +266,20 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_favorites = get_user_favorites(chat_id)
 
         if not user_favorites['favorites']:
-            await query.edit_message_text('Избранные фильмы пусты.', reply_markup=build_favorites_keyboard())
+            await query.edit_message_text('В избранном пусто.', reply_markup=build_favorites_keyboard())
         else:
             favorites_message = '\n'.join([f"{idx + 1}. <a href='{user_favorites['links'][title]}'>{title}</a>"
                                            for idx, title in enumerate(user_favorites['favorites'])])
-            await query.edit_message_text(f'Ваши избранные фильмы:\n{favorites_message}', parse_mode='HTML',
+            await query.edit_message_text(f'Ваше избранное:\n{favorites_message}', parse_mode='HTML',
                                           reply_markup=build_favorites_keyboard())
+
+    elif data == 'clear_favorites':
+        chat_id = update.callback_query.message.chat_id
+        conn = get_db_connection()
+        conn.execute('DELETE FROM user_favorites WHERE chat_id = ?', (chat_id,))
+        conn.commit()
+        conn.close()
+        await query.edit_message_text("Избранное очищено.", reply_markup=build_favorites_keyboard())
 
     elif data.startswith('movie_'):
         index = int(data.split('_')[1])
@@ -302,20 +321,24 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             player_url = extract_player_link(movie_page_content)
 
             if player_url:
-                movie_info = extract_movie_info(movie_page_content,
-                                                'goodfilms')  # При добавлении в избранное указываем источник
+                movie_info = extract_movie_info(movie_page_content, 'goodfilms')
 
                 conn = get_db_connection()
-                conn.execute('''INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url)
-                                VALUES (?, ?, ?, ?)''', (chat_id, movie_info['title'], movie_url, player_url))
-                conn.commit()
+                cursor = conn.execute('SELECT COUNT(*) FROM user_favorites WHERE chat_id = ?', (chat_id,))
+                favorite_count = cursor.fetchone()[0]
+
+                if favorite_count < 30:
+                    conn.execute('''INSERT OR IGNORE INTO user_favorites (chat_id, title, url, player_url)
+                                    VALUES (?, ?, ?, ?)''', (chat_id, movie_info['title'], movie_url, player_url))
+                    conn.commit()
+                    await query.answer("Фильм добавлен в избранное.", show_alert=True)
+                else:
+                    await query.answer("Избранное уже заполнено. Максимум 30 элементов.", show_alert=True)
+
                 conn.close()
-
-                await query.answer("Фильм добавлен в избранное.", show_alert=True)
                 await query.edit_message_reply_markup(reply_markup=build_movie_keyboard(movie_url, player_url, True))
-
-        else:
-            await query.answer("Произошла ошибка. Попробуйте снова.", show_alert=True)
+            else:
+                await query.answer("Произошла ошибка. Попробуйте снова.", show_alert=True)
 
     elif data == 'home':
         await start(update, context)
