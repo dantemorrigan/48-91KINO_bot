@@ -7,11 +7,33 @@ import requests
 from bs4 import BeautifulSoup
 import hashlib
 
+# Функция для получения данных с Кинопоиска
+def get_kinopoisk_data(search_term):
+    headers = {
+        'X-API-KEY': 'XW5G9JQ-0G5MK33-GY31PJD-H0SABES',
+        'Content-Type': 'application/json',
+    }
+
+    response = requests.get(
+        f'https://api.kinopoisk.dev/v1.3/movie?name={search_term}&limit=1',
+        headers=headers
+    )
+
+    if response.status_code == 200:
+        data = response.json()
+        if data and 'docs' in data:
+            movie_info = data['docs'][0]
+            return {
+                'title': movie_info.get('name', 'Название отсутствует'),
+                'rating': movie_info.get('rating', {}).get('kp', 'Нет рейтинга'),
+                'poster_url': movie_info.get('poster', {}).get('url', '')
+            }
+    return None
+
 # Загрузка токена из файла конфигурации
 with open('config.json', 'r', encoding='utf-8') as file:
     config = json.load(file)
     TOKEN = config['TOKEN']
-
 
 # Настройка логирования
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
@@ -24,13 +46,11 @@ SEARCH_URL_GOODFILMS = 'https://zhqpg.goodfilms.fun/index.php?do=search'
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
 
-
 # Подключение к базе данных SQLite
 def get_db_connection():
     conn = sqlite3.connect('favorites.db')
     conn.row_factory = sqlite3.Row
     return conn
-
 
 # Создание таблиц, если они не существуют
 def create_tables():
@@ -46,9 +66,7 @@ def create_tables():
     ''')
     conn.close()
 
-
 create_tables()
-
 
 # Функция для получения HTML-кода страницы
 def get_page(url, params=None):
@@ -58,13 +76,11 @@ def get_page(url, params=None):
     logger.debug(f'HTML код страницы: {response.text[:1000]}')
     return response.text
 
-
 # Функция для получения результатов поиска с сайта lordserial
 def get_search_results_lordserial(search_term):
     params_lordserial = {'do': 'search', 'subaction': 'search', 'story': search_term}
     search_content_lordserial = get_page(SEARCH_URL_LORDSERIAL, params=params_lordserial)
     return parse_search_results_lordserial(search_content_lordserial)
-
 
 # Функция для парсинга результатов поиска с сайта lordserial
 def parse_search_results_lordserial(content):
@@ -75,7 +91,6 @@ def parse_search_results_lordserial(content):
         link = item.find('a', class_='th-in with-mask')['href']
         results.append((f"{title} (Источник 1)", link))
     return results
-
 
 # Функция для получения результатов поиска с сайта goodfilms
 def get_search_results_goodfilms(search_term):
@@ -88,7 +103,6 @@ def get_search_results_goodfilms(search_term):
     search_content_goodfilms = requests.post(SEARCH_URL_GOODFILMS, data=params_goodfilms).text
     return parse_search_results_goodfilms(search_content_goodfilms)
 
-
 # Функция для парсинга результатов поиска с сайта goodfilms
 def parse_search_results_goodfilms(content):
     soup = BeautifulSoup(content, 'html.parser')
@@ -99,13 +113,11 @@ def parse_search_results_goodfilms(content):
         results.append((f"{title} (Источник 2)", link))
     return results
 
-
 # Функция для получения результатов поиска из двух источников
 def get_search_results(search_term):
     results_lordserial = get_search_results_lordserial(search_term)
     results_goodfilms = get_search_results_goodfilms(search_term)
     return results_lordserial + results_goodfilms
-
 
 # Функция для извлечения информации о фильме
 def extract_movie_info(movie_page_content, source):
@@ -126,7 +138,6 @@ def extract_movie_info(movie_page_content, source):
         'title': title_text,
         'description': description_text,
     }
-
 
 # Функция для извлечения ссылки на плеер
 def extract_player_link(movie_page_content):
@@ -149,7 +160,6 @@ def extract_player_link(movie_page_content):
 
     return None
 
-
 # Функция для создания клавиатуры с кнопками
 def build_keyboard(results, current_page, total_pages):
     keyboard = []
@@ -167,9 +177,6 @@ def build_keyboard(results, current_page, total_pages):
 
     return InlineKeyboardMarkup(keyboard)
 
-
-
-
 # Функция для создания клавиатуры с кнопками на странице избранного
 def build_favorites_keyboard():
     keyboard = [
@@ -178,10 +185,8 @@ def build_favorites_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-
 def get_unique_id(url):
     return hashlib.md5(url.encode()).hexdigest()[:10]
-
 
 # Функция для создания клавиатуры на странице фильма
 def build_movie_keyboard(movie_url, player_url, is_favorite=False):
@@ -203,7 +208,6 @@ def build_movie_keyboard(movie_url, player_url, is_favorite=False):
 
     return InlineKeyboardMarkup(keyboard)
 
-
 # Функция для получения избранного конкретного пользователя
 def get_user_favorites(chat_id):
     conn = get_db_connection()
@@ -212,8 +216,6 @@ def get_user_favorites(chat_id):
     conn.close()
     return {'favorites': [row['title'] for row in favorites],
             'links': {row['title']: row['player_url'] for row in favorites}}  # Используем player_url
-
-
 
 # Функция для обработки команды /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -232,7 +234,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("🔍 Поиск", callback_data='search')],
         [InlineKeyboardButton("⭐ Избранное", callback_data='favorites')],
         [InlineKeyboardButton("👾 Исходный код бота на Github", url='https://github.com/dantemorrigan/48-91KINO_bot')],
-        [InlineKeyboardButton("💰 Поддержать проект", url='https://boosty.to/svdo')]  # Добавили кнопку
+        [InlineKeyboardButton("💰 Поддержать проект", url='https://boosty.to/svdo/donate')]  # Добавили кнопку
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -292,6 +294,13 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
             movie_info = extract_movie_info(movie_page_content, source)
             player_url = extract_player_link(movie_page_content)
 
+            # Получение данных с Кинопоиска
+            kinopoisk_data = get_kinopoisk_data(title.split(' (')[0])
+            kinopoisk_info = ""
+            if kinopoisk_data:
+                kinopoisk_info = (f"<b>🔥 Рейтинг КП:</b> {kinopoisk_data['rating']}\n"
+                                  f"<b>🎨 Обложка:</b> <a href='{kinopoisk_data['poster_url']}'>Посмотреть</a>")
+
             chat_id = update.callback_query.message.chat_id
             conn = get_db_connection()
             cursor = conn.execute('SELECT 1 FROM user_favorites WHERE chat_id = ? AND url = ?', (chat_id, movie_url))
@@ -303,6 +312,7 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "──────────\n"
                 f"<b>Описание:</b>\n<i>{movie_info['description']}</i>\n"
                 "──────────\n"
+                f"{kinopoisk_info}"
             )
 
             await query.edit_message_text(
@@ -349,12 +359,17 @@ async def button(update: Update, context: ContextTypes.DEFAULT_TYPE):
         total_pages = search_results_cache.get('total_pages', 1)
         await query.edit_message_reply_markup(reply_markup=build_keyboard(results, current_page, total_pages))
 
-
 # Функция для обработки текста от пользователя (поиск)
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_term = update.message.text
     chat_id = update.message.chat_id
 
+
+
+    # Отправляем сообщение с "Идет поиск... 🔍"
+    search_message = await context.bot.send_message(chat_id=chat_id, text="Идет поиск... 🔍")
+
+    # Выполняем поиск
     results = get_search_results(search_term)
     search_results_cache['results'] = results
     search_results_cache['url_map'] = {get_unique_id(url): url for _, url in results}
@@ -363,16 +378,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     search_results_cache['total_pages'] = total_pages
 
     if not results:
-        await context.bot.send_message(chat_id=chat_id, text="Результатов не найдено.")
+        # Обновляем сообщение на "Результатов не найдено", если ничего не найдено
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=search_message.message_id,
+                                            text="Результатов не найдено.")
     else:
-        await context.bot.send_message(chat_id=chat_id, text="Результаты поиска:",
-                                       reply_markup=build_keyboard(results, current_page=1, total_pages=total_pages))
-
+        # Обновляем сообщение с результатами поиска
+        await context.bot.edit_message_text(chat_id=chat_id, message_id=search_message.message_id,
+                                            text="Результаты поиска:",
+                                            reply_markup=build_keyboard(results, current_page=1, total_pages=total_pages))
 
 # Функция для обработки ошибок
 async def error(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.error('Произошла ошибка при обработке обновления:', exc_info=context.error)
-
 
 if __name__ == '__main__':
     application = Application.builder().token(TOKEN).build()
