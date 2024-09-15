@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 # URL-адреса поиска
 SEARCH_URL_LORDSERIAL = 'https://lordserial.run/index.php?do=search'
-SEARCH_URL_GOODFILMS = 'https://zhqpg.goodfilms.fun/index.php?do=search'
+SEARCH_URL_GOODFILMS = 'https://zhcpg.goodfilms.fun/index.php?do=search'
 
 # Глобальные переменные для хранения результатов поиска и избранного
 search_results_cache = {}
