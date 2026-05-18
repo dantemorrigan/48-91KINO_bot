@@ -1,0 +1,16 @@
+[app]
+name = "kinobot-4891"
+primary_region = "ams"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  DATA_DIR = "/data"
+
+[[mounts]]
+  source = "kinobot_data"
+  destination = "/data"
+
+[deploy]
+  strategy = "immediate"
