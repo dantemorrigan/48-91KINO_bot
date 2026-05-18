@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.db
+*.sqlite3
+.env
+.env.*
+venv/
+.venv/
+bot/config.json
