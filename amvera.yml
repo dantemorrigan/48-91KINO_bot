@@ -1,0 +1,9 @@
+---
+meta:
+  environment: docker
+  toolchain:
+    name: dockerfile
+build:
+  dockerfile: Dockerfile
+run:
+  persistenceMount: /data

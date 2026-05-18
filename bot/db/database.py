@@ -1,8 +1,10 @@
+import os
+
 import aiosqlite
 from typing import Optional
 
-
-DB_PATH = "favorites.db"
+# /data is the persistent mount on Amvera; falls back to local dir for dev
+DB_PATH = os.path.join(os.environ.get("DATA_DIR", "."), "favorites.db")
 
 
 async def init_db():
