@@ -1,5 +1,4 @@
-python-telegram-bot==20.7
-aiohttp==3.9.5
+python-telegram-bot==20.8
+aiohttp==3.10.11
 aiosqlite==0.20.0
 beautifulsoup4==4.12.3
-lxml==5.2.2

@@ -9,9 +9,9 @@ from typing import Optional
 import aiohttp
 
 from .kinopoisk import KinopoiskService, MovieMeta
-from ..sources.kodik import KodikSource
-from ..sources.hdrezka import HDRezkaSource
-from ..sources.base import VideoInfo
+from sources.kodik import KodikSource
+from sources.hdrezka import HDRezkaSource
+from sources.base import VideoInfo
 
 logger = logging.getLogger(__name__)
 

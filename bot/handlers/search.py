@@ -1,12 +1,13 @@
+import html
 import logging
 
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..services.searcher import Searcher
-from ..utils.keyboards import search_results_keyboard
-from ..utils.formatters import format_search_header
-from ..utils.rate_limit import RateLimiter
+from services.searcher import Searcher
+from utils.keyboards import search_results_keyboard
+from utils.formatters import format_search_header
+from utils.rate_limit import RateLimiter
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +50,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not results:
         await status.edit_text(
-            f"😔 По запросу <b>{search_term}</b> ничего не найдено.",
+            f"😔 По запросу <b>{html.escape(search_term)}</b> ничего не найдено.",
             parse_mode="HTML"
         )
         return

@@ -1,7 +1,7 @@
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..utils.keyboards import main_menu_keyboard
+from utils.keyboards import main_menu_keyboard
 
 WELCOME = (
     "🎬 Добро пожаловать в бота для поиска фильмов и сериалов "

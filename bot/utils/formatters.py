@@ -1,10 +1,13 @@
-from ..services.kinopoisk import MovieMeta
+import html
+
+from services.kinopoisk import MovieMeta
 
 
 def format_movie_card(meta: MovieMeta, source_name: str = "") -> str:
-    lines = [f"<b>{meta.title}</b>"]
+    title = html.escape(meta.title)
+    lines = [f"<b>{title}</b>"]
     if meta.title_orig and meta.title_orig != meta.title:
-        lines.append(f"<i>{meta.title_orig}</i>")
+        lines.append(f"<i>{html.escape(meta.title_orig)}</i>")
 
     lines.append("──────────")
 
@@ -28,10 +31,10 @@ def format_movie_card(meta: MovieMeta, source_name: str = "") -> str:
 
     if meta.description:
         lines.append("──────────")
-        lines.append(f"<i>{meta.description}</i>")
+        lines.append(f"<i>{html.escape(meta.description)}</i>")
 
     if source_name:
-        lines.append(f"\n<i>Источник: {source_name}</i>")
+        lines.append(f"\n<i>Источник: {html.escape(source_name)}</i>")
 
     return "\n".join(lines)
 
@@ -45,6 +48,7 @@ def format_no_video() -> str:
 
 
 def format_search_header(query: str, count: int) -> str:
+    q = html.escape(query)
     if count == 0:
-        return f"🔍 По запросу <b>{query}</b> ничего не найдено.\nПопробуйте другое название."
-    return f"🔍 По запросу <b>{query}</b> найдено {count} результатов:"
+        return f"🔍 По запросу <b>{q}</b> ничего не найдено.\nПопробуйте другое название."
+    return f"🔍 По запросу <b>{q}</b> найдено {count} результатов:"

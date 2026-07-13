@@ -3,11 +3,11 @@ import logging
 from telegram import Update
 from telegram.ext import ContextTypes
 
-from ..services.searcher import Searcher
-from ..services.kinopoisk import MovieMeta
-from ..db.database import is_favorite, add_favorite
-from ..utils.keyboards import movie_keyboard, series_keyboard
-from ..utils.formatters import format_movie_card, format_no_video
+from services.searcher import Searcher
+from services.kinopoisk import MovieMeta
+from db.database import is_favorite, add_favorite
+from utils.keyboards import movie_keyboard, series_keyboard
+from utils.formatters import format_movie_card, format_no_video
 
 logger = logging.getLogger(__name__)
 

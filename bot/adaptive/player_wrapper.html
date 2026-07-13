@@ -41,10 +41,19 @@
         const urlParams = new URLSearchParams(window.location.search);
         const playerUrl = urlParams.get('url');
 
-        if (playerUrl) {
+        function isSafePlayerUrl(value) {
+            try {
+                const parsed = new URL(value, window.location.href);
+                return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        if (playerUrl && isSafePlayerUrl(playerUrl)) {
             document.querySelector('iframe').src = playerUrl;
         } else {
-            document.body.innerHTML = '<p>Не удалось загрузить плеер.</p>';
+            document.body.textContent = 'Не удалось загрузить плеер.';
         }
     </script>
 </body>

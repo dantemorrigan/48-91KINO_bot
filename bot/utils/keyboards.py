@@ -1,6 +1,11 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
-from ..config import Config
+from config import Config
+
+
+def is_safe_http_url(url: str | None) -> bool:
+    """Only allow http(s) links to be rendered as clickable buttons/anchors."""
+    return bool(url) and url.lower().startswith(("http://", "https://"))
 
 
 def main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -43,7 +48,7 @@ def search_results_keyboard(results: list, page: int, per_page: int) -> InlineKe
 def movie_keyboard(movie_url: str, player_url: str | None,
                    is_fav: bool, is_series: bool = False) -> InlineKeyboardMarkup:
     rows = []
-    if player_url:
+    if is_safe_http_url(player_url):
         label = "▶️ СМОТРЕТЬ" if not is_series else "▶️ СМОТРЕТЬ (плеер)"
         rows.append([InlineKeyboardButton(label, url=player_url)])
     else:
@@ -59,7 +64,7 @@ def movie_keyboard(movie_url: str, player_url: str | None,
 def series_keyboard(movie_url: str, player_url: str | None,
                     seasons: list[dict], is_fav: bool) -> InlineKeyboardMarkup:
     rows = []
-    if player_url:
+    if is_safe_http_url(player_url):
         rows.append([InlineKeyboardButton("▶️ СМОТРЕТЬ (все серии)", url=player_url)])
 
     if seasons:

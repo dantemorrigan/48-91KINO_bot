@@ -1,0 +1,5 @@
+{
+    "TOKEN": "your-telegram-bot-token",
+    "KINOPOISK_API_KEY": "your-kinopoisk-dev-api-key",
+    "KODIK_TOKEN": null
+}
