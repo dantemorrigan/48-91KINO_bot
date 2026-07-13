@@ -1,6 +1,11 @@
 """
 kinopoisk.dev API wrapper.
 Provides movie metadata: title, year, rating, poster, description, KP ID.
+
+ARCHIVED: this bot is fully retired (see README). The Kinopoisk.dev API key
+was retired for good after the security incident and is never supplied, so
+this service is a permanent no-op stub — it makes no network calls and
+always returns empty results.
 """
 import logging
 from dataclasses import dataclass

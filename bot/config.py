@@ -18,16 +18,14 @@ class Config:
 def load_config(path: str = "config.json") -> Config:
     # Environment variables take priority (for Railway/cloud hosting)
     token = os.environ.get("BOT_TOKEN")
-    kp_key = os.environ.get("KINOPOISK_API_KEY")
     kodik = os.environ.get("KODIK_TOKEN")
 
     # Fall back to config.json for local development
-    if not token or not kp_key:
+    if not token:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             token = token or data.get("TOKEN", "")
-            kp_key = kp_key or data.get("KINOPOISK_API_KEY", "")
             kodik = kodik or data.get("KODIK_TOKEN")
         except FileNotFoundError:
             pass
@@ -38,8 +36,10 @@ def load_config(path: str = "config.json") -> Config:
             "Set BOT_TOKEN environment variable or add TOKEN to config.json"
         )
 
+    # Kinopoisk integration is permanently disabled: the bot is archived and
+    # its Kinopoisk.dev API key was retired for good after the compromise.
     return Config(
         token=token,
-        kinopoisk_api_key=kp_key or "",
+        kinopoisk_api_key="",
         kodik_token=kodik or None,
     )
